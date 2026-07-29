@@ -1,0 +1,390 @@
+import ShadcnUI
+import SwiftUI
+
+/// Streaming state of the surrounding chat, driving the submit button's glyph.
+/// Mirrors `ChatStatus` from the AI SDK.
+public enum AIPromptStatus: String, Sendable, CaseIterable {
+    case ready
+    case submitted
+    case streaming
+    case error
+}
+
+/// Chrome overrides for the composer.
+///
+/// The provider templates (ChatGPT, Claude, Grok) differ almost entirely in
+/// these values, so they're factored out rather than forked into three copies
+/// of the layout.
+public struct AIPromptInputStyle: Sendable {
+    /// `nil` uses the theme's `rounded-md`.
+    public var cornerRadius: CGFloat?
+    /// `nil` uses the default transparent / `dark:bg-input/30` fill.
+    public var background: Color?
+    /// Horizontal inset on the textarea. ChatGPT and Grok use `px-5`.
+    public var textFieldHorizontalPadding: CGFloat
+    /// `true` renders the textarea at `text-base` rather than `text-sm`.
+    public var usesLargeText: Bool
+    /// Padding around the footer row. ChatGPT and Grok use `p-2.5`.
+    public var footerPadding: CGFloat
+    /// Submit button shape.
+    public var submitIsCircular: Bool
+    /// Resting height of the textarea. `min-h-16` (64) is right for a
+    /// full-width page composer but far too tall in a sidebar, where it reads
+    /// as a big empty box that then shrinks once content arrives.
+    public var minTextHeight: CGFloat
+    public var maxTextHeight: CGFloat
+
+    public init(
+        cornerRadius: CGFloat? = nil,
+        background: Color? = nil,
+        textFieldHorizontalPadding: CGFloat = Space.x2,
+        usesLargeText: Bool = false,
+        footerPadding: CGFloat = Space.x3,
+        submitIsCircular: Bool = false,
+        minTextHeight: CGFloat = 64,
+        maxTextHeight: CGFloat = 192
+    ) {
+        self.cornerRadius = cornerRadius
+        self.background = background
+        self.textFieldHorizontalPadding = textFieldHorizontalPadding
+        self.usesLargeText = usesLargeText
+        self.footerPadding = footerPadding
+        self.submitIsCircular = submitIsCircular
+        self.minTextHeight = minTextHeight
+        self.maxTextHeight = maxTextHeight
+    }
+
+    /// Sidebar-sized: a single-line resting height and tighter chrome.
+    public static let compact = AIPromptInputStyle(
+        textFieldHorizontalPadding: Space.x2,
+        footerPadding: Space.x2,
+        minTextHeight: 34,
+        maxTextHeight: 140
+    )
+
+    /// The stock AI Elements composer.
+    public static let `default` = AIPromptInputStyle()
+
+    /// `rounded-[28px]`, `px-5` textarea, `p-2.5` footer, circular submit.
+    public static let pill = AIPromptInputStyle(
+        cornerRadius: 28,
+        textFieldHorizontalPadding: Space.x5,
+        usesLargeText: true,
+        footerPadding: Space.x2_5,
+        submitIsCircular: true
+    )
+}
+
+/// AI Elements' `PromptInput` — the composer.
+///
+/// Built on shadcn's `InputGroup`: one `rounded-md border shadow-xs` shell that
+/// stacks an optional header, the growing textarea, and a footer holding tools
+/// on the left and submit on the right. The whole shell shows the focus ring
+/// when the textarea has focus, which is `InputGroup`'s `has-[…:focus-visible]`
+/// rule.
+public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
+    @Binding private var text: String
+    private let placeholder: String
+    private let status: AIPromptStatus
+    private let style: AIPromptInputStyle
+    private let onSubmit: () -> Void
+    private let onStop: (() -> Void)?
+    private let header: Header
+    private let tools: Tools
+    private let trailing: Trailing
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+    @FocusState private var isFocused: Bool
+
+    public init(
+        text: Binding<String>,
+        placeholder: String = "What would you like to know?",
+        status: AIPromptStatus = .ready,
+        style: AIPromptInputStyle = .default,
+        onSubmit: @escaping () -> Void,
+        onStop: (() -> Void)? = nil,
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder tools: () -> Tools,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self._text = text
+        self.placeholder = placeholder
+        self.status = status
+        self.style = style
+        self.onSubmit = onSubmit
+        self.onStop = onStop
+        self.header = header()
+        self.tools = tools()
+        self.trailing = trailing()
+    }
+
+    private var canSubmit: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var cornerRadius: CGFloat { style.cornerRadius ?? theme.radius.md }
+
+    private var fill: Color {
+        style.background ?? (palette.isDark ? palette.input.opacity(0.3) : .clear)
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // `align="block-start"`-style header, used for attachment chips.
+            header
+                .padding(.horizontal, style.textFieldHorizontalPadding)
+                .padding(.top, Space.x3)
+
+            ShadcnPlainTextEditor(
+                text: $text,
+                placeholder: placeholder,
+                minHeight: style.minTextHeight,
+                maxHeight: style.maxTextHeight,
+                font: style.usesLargeText
+                    ? theme.typography.sans(theme.typography.base)
+                    : nil
+            )
+            .focused($isFocused)
+            .padding(.horizontal, style.textFieldHorizontalPadding)
+            .padding(.top, Space.x2)
+
+            // `align="block-end"`: tools left, submit right.
+            HStack(spacing: Space.x1) {
+                HStack(spacing: Space.x2) {
+                    tools
+                }
+                Spacer(minLength: Space.x2)
+                HStack(spacing: Space.x2) {
+                    trailing
+                    submitButton
+                }
+            }
+            .padding(style.footerPadding)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(fill)
+        )
+        .shadcnBorder(
+            isFocused ? palette.ring : palette.input,
+            cornerRadius: cornerRadius
+        )
+        .shadcnFocusRing(isFocused, palette: palette, cornerRadius: cornerRadius)
+        .shadcnShadow(.xs)
+        .animation(.easeOut(duration: 0.12), value: isFocused)
+        .onTapGesture { isFocused = true }
+    }
+
+    @ViewBuilder
+    private var submitButton: some View {
+        let shaped = { (view: AnyView) -> AnyView in
+            style.submitIsCircular ? AnyView(view.clipShape(Circle())) : view
+        }
+
+        switch status {
+        case .streaming:
+            // Streaming turns submit into a stop control.
+            shaped(AnyView(
+                ShadcnButton(icon: ShadcnIcon.square, variant: .primary, size: .iconSM) {
+                    onStop?()
+                }
+                .accessibilityLabel("Stop")
+            ))
+
+        case .submitted:
+            shaped(AnyView(
+                ShadcnButton(variant: .primary, size: .iconSM, hasIcon: true, action: {}) {
+                    AILoader(size: 16)
+                }
+                .disabled(true)
+                .accessibilityLabel("Submitting")
+            ))
+
+        case .error:
+            shaped(AnyView(
+                ShadcnButton(icon: ShadcnIcon.xMark, variant: .destructive, size: .iconSM) {
+                    onSubmit()
+                }
+                .accessibilityLabel("Retry")
+            ))
+
+        case .ready:
+            shaped(AnyView(
+                ShadcnButton(icon: AIPromptIcon.submit, variant: .primary, size: .iconSM) {
+                    guard canSubmit else { return }
+                    onSubmit()
+                }
+                .disabled(!canSubmit)
+                .accessibilityLabel("Submit")
+            ))
+        }
+    }
+}
+
+extension AIPromptInput where Trailing == EmptyView {
+    public init(
+        text: Binding<String>,
+        placeholder: String = "What would you like to know?",
+        status: AIPromptStatus = .ready,
+        style: AIPromptInputStyle = .default,
+        onSubmit: @escaping () -> Void,
+        onStop: (() -> Void)? = nil,
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder tools: () -> Tools
+    ) {
+        self.init(
+            text: text,
+            placeholder: placeholder,
+            status: status,
+            style: style,
+            onSubmit: onSubmit,
+            onStop: onStop,
+            header: header,
+            tools: tools,
+            trailing: { EmptyView() }
+        )
+    }
+}
+
+extension AIPromptInput where Header == EmptyView {
+    /// Tools on the left, extra controls beside submit on the right.
+    public init(
+        text: Binding<String>,
+        placeholder: String = "What would you like to know?",
+        status: AIPromptStatus = .ready,
+        style: AIPromptInputStyle = .default,
+        onSubmit: @escaping () -> Void,
+        onStop: (() -> Void)? = nil,
+        @ViewBuilder tools: () -> Tools,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.init(
+            text: text,
+            placeholder: placeholder,
+            status: status,
+            style: style,
+            onSubmit: onSubmit,
+            onStop: onStop,
+            header: { EmptyView() },
+            tools: tools,
+            trailing: trailing
+        )
+    }
+}
+
+extension AIPromptInput where Header == EmptyView, Trailing == EmptyView {
+    public init(
+        text: Binding<String>,
+        placeholder: String = "What would you like to know?",
+        status: AIPromptStatus = .ready,
+        style: AIPromptInputStyle = .default,
+        onSubmit: @escaping () -> Void,
+        onStop: (() -> Void)? = nil,
+        @ViewBuilder tools: () -> Tools
+    ) {
+        self.init(
+            text: text,
+            placeholder: placeholder,
+            status: status,
+            style: style,
+            onSubmit: onSubmit,
+            onStop: onStop,
+            header: { EmptyView() },
+            tools: tools,
+            trailing: { EmptyView() }
+        )
+    }
+}
+
+extension AIPromptInput where Header == EmptyView, Tools == EmptyView, Trailing == EmptyView {
+    public init(
+        text: Binding<String>,
+        placeholder: String = "What would you like to know?",
+        status: AIPromptStatus = .ready,
+        style: AIPromptInputStyle = .default,
+        onSubmit: @escaping () -> Void,
+        onStop: (() -> Void)? = nil
+    ) {
+        self.init(
+            text: text,
+            placeholder: placeholder,
+            status: status,
+            style: style,
+            onSubmit: onSubmit,
+            onStop: onStop,
+            header: { EmptyView() },
+            tools: { EmptyView() },
+            trailing: { EmptyView() }
+        )
+    }
+}
+
+/// Glyphs specific to the composer.
+public enum AIPromptIcon {
+    /// `CornerDownLeftIcon` — the return-key arrow on the submit button.
+    public static let submit = "arrow.turn.down.left"
+}
+
+/// `PromptInputButton` — a ghost `icon-sm` tool button for the composer footer.
+public struct AIPromptInputButton: View {
+    private let systemImage: String
+    private let title: String?
+    private let tooltip: String?
+    private let isActive: Bool
+    private let action: () -> Void
+
+    public init(
+        systemImage: String,
+        title: String? = nil,
+        tooltip: String? = nil,
+        isActive: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.systemImage = systemImage
+        self.title = title
+        self.tooltip = tooltip
+        self.isActive = isActive
+        self.action = action
+    }
+
+    public var body: some View {
+        Group {
+            if let title {
+                ShadcnButton(
+                    title,
+                    systemImage: systemImage,
+                    variant: isActive ? .secondary : .ghost,
+                    size: .small,
+                    action: action
+                )
+            } else {
+                ShadcnButton(
+                    icon: systemImage,
+                    variant: isActive ? .secondary : .ghost,
+                    size: .iconSM,
+                    action: action
+                )
+            }
+        }
+        .applyIf(tooltip != nil) { view in
+            view.shadcnTooltip(tooltip ?? "")
+        }
+    }
+}
+
+/// `PromptInputModelSelect` — the model picker that sits in the composer's
+/// tool row.
+public struct AIPromptInputModelSelect<Value: Hashable>: View {
+    @Binding private var selection: Value?
+    private let models: [(value: Value, label: String)]
+
+    public init(selection: Binding<Value?>, models: [(value: Value, label: String)]) {
+        self._selection = selection
+        self.models = models
+    }
+
+    public var body: some View {
+        ShadcnSelect("Select model", selection: $selection, width: 180, options: models)
+    }
+}
