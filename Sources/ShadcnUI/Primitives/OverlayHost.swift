@@ -8,6 +8,11 @@ struct ShadcnOverlayItem: Identifiable {
     let edge: VerticalEdge
     let alignment: HorizontalAlignment
     let gap: CGFloat
+    /// Panel height, when the caller can compute it (a menu knows its row
+    /// count). Required for `.top`: placing a panel above its trigger means
+    /// offsetting by its own height, and measuring it during layout doesn't
+    /// work — SwiftUI discards state written from a preference reader.
+    let contentHeight: CGFloat?
     let content: AnyView
 }
 
@@ -36,6 +41,7 @@ extension View {
         edge: VerticalEdge = .bottom,
         alignment: HorizontalAlignment = .leading,
         gap: CGFloat = 4,
+        contentHeight: CGFloat? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         let panel = content()
@@ -48,6 +54,7 @@ extension View {
                     edge: edge,
                     alignment: alignment,
                     gap: gap,
+                    contentHeight: contentHeight,
                     content: AnyView(panel)
                 )
             ]
@@ -79,16 +86,14 @@ struct ShadcnOverlayHost: ViewModifier {
                         // give the panel a container that *ends* at the
                         // trigger's top and bottom-align inside it — SwiftUI
                         // does the arithmetic during layout.
-                        // NOTE: `edge` is accepted but every menu opens
-                        // downward. `.top` is unsupported: five approaches all
-                        // failed, and the useful finding is that a plain offset
-                        // *does* render it (top edge level with the trigger's,
-                        // so it needs shifting up by its own height) while every
-                        // attempt to supply that height stops it rendering at
-                        // all — alignment guide (consumed by this frame),
-                        // @State measurement (written during layout, discarded),
-                        // bottom-aligned frame at `maxHeight` and at fixed
-                        // `height`, and a Spacer column. Wants a debugger.
+                        // `.top` is plumbed but does not render, and the cause
+                        // is upstream of placement: with the offset arithmetic
+                        // now correct (the caller states the panel height, so
+                        // nothing is measured during layout) the panel still
+                        // appears nowhere. Six approaches ruled out. Something
+                        // about `.top` prevents the overlay being emitted at
+                        // all — next step is a breakpoint in this closure to see
+                        // whether the item even arrives.
                         .frame(
                             maxWidth: .infinity,
                             maxHeight: .infinity,
@@ -98,7 +103,7 @@ struct ShadcnOverlayHost: ViewModifier {
                             x: originX(for: item, trigger: frame),
                             y: item.edge == .bottom
                                 ? frame.maxY + item.gap
-                                : frame.minY - item.gap
+                                : frame.minY - item.gap - (item.contentHeight ?? 0)
                         )
                 }
             }

@@ -224,17 +224,17 @@ public struct AIAssistantPanel: View {
             if !model.agents.isEmpty {
                 ShadcnSelect(
                     "Agent", selection: $model.agent, width: 104,
-                    isCompact: true, options: model.agents)
+                    isCompact: true, edge: .top, options: model.agents)
             }
             if !model.models.isEmpty {
                 ShadcnSelect(
                     "Model", selection: $model.model, width: 126,
-                    isCompact: true, options: model.models)
+                    isCompact: true, edge: .top, options: model.models)
             }
             if !model.efforts.isEmpty {
                 ShadcnSelect(
                     "Effort", selection: $model.effort, width: 96,
-                    isCompact: true, options: model.efforts)
+                    isCompact: true, edge: .top, options: model.efforts)
             }
         }
     }

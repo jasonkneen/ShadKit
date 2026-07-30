@@ -303,6 +303,8 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
     @Binding private var isPresented: Bool
     private let minWidth: CGFloat
     private let edge: VerticalEdge
+    /// Height of the menu panel, for placing it above the trigger.
+    private let contentHeight: CGFloat?
     private let alignment: HorizontalAlignment
     private let trigger: Trigger
     private let content: Content
@@ -312,6 +314,7 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
         minWidth: CGFloat = 180,
         edge: VerticalEdge = .bottom,
         alignment: HorizontalAlignment = .leading,
+        contentHeight: CGFloat? = nil,
         @ViewBuilder trigger: () -> Trigger,
         @ViewBuilder content: () -> Content
     ) {
@@ -319,13 +322,17 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
         self.minWidth = minWidth
         self.edge = edge
         self.alignment = alignment
+        self.contentHeight = contentHeight
         self.trigger = trigger()
         self.content = content()
     }
 
     public var body: some View {
         trigger
-            .shadcnOverlay(isPresented: isPresented, edge: edge, alignment: alignment) {
+            .shadcnOverlay(
+                isPresented: isPresented, edge: edge, alignment: alignment,
+                contentHeight: contentHeight
+            ) {
                 ZStack(alignment: .topLeading) {
                     ShadcnDismissCatcher {
                         withAnimation(.easeOut(duration: 0.12)) { isPresented = false }
@@ -352,8 +359,9 @@ public struct ShadcnSelect<Value: Hashable>: View {
     private let width: CGFloat?
     /// Composer-sized: 28pt tall at `text-xs`, rather than the 36pt form control.
     private let isCompact: Bool
-    /// Accepted but not honoured — every menu opens downward. See
-    /// `ShadcnOverlayHost` for the five approaches already ruled out.
+    /// Accepted but still not working. `.top` computes the right offset now
+    /// (the caller states the panel height, so no layout-time measurement is
+    /// needed) yet the panel renders nowhere — see `ShadcnOverlayHost`.
     private let edge: VerticalEdge
 
     @Environment(\.shadcnPalette) private var palette
@@ -380,6 +388,13 @@ public struct ShadcnSelect<Value: Hashable>: View {
         self._isOpen = State(initialValue: startsOpen)
     }
 
+    /// `ShadcnMenuItem` is `py-1.5` around a `text-sm` line; the panel adds
+    /// `p-1` plus its border.
+    static func panelHeight(rows: Int) -> CGFloat {
+        let row = Space.x1_5 * 2 + 18
+        return CGFloat(rows) * row + Space.x1 * 2 + 2
+    }
+
     private var currentLabel: String? {
         options.first { $0.value == selection }?.label
     }
@@ -388,7 +403,10 @@ public struct ShadcnSelect<Value: Hashable>: View {
         ShadcnDropdownMenu(
             isPresented: $isOpen,
             minWidth: width ?? 180,
-            edge: edge
+            edge: edge,
+            // A menu's height is its rows plus the panel's own padding, so it
+            // can be stated rather than measured.
+            contentHeight: edge == .top ? Self.panelHeight(rows: options.count) : nil
         ) {
             Button {
                 withAnimation(.easeOut(duration: 0.12)) { isOpen.toggle() }
