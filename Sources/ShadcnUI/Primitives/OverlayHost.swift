@@ -2,6 +2,9 @@ import SwiftUI
 
 /// One floating panel awaiting placement by the root overlay host.
 struct ShadcnOverlayItem: Identifiable {
+    /// Stable for the lifetime of the presenting control. Regenerating this on
+    /// every preference pass makes `ForEach` treat the panel as brand new and
+    /// animate it in from the origin — the "flies in from the corner" bug.
     let id: UUID
     /// Bounds of the trigger, resolved against the host's coordinate space.
     let anchor: Anchor<CGRect>
@@ -13,6 +16,11 @@ struct ShadcnOverlayItem: Identifiable {
     /// offsetting by its own height, and measuring it during layout doesn't
     /// work — SwiftUI discards state written from a preference reader.
     let contentHeight: CGFloat?
+    /// Known width of the panel, used to place trailing and centered overlays.
+    /// A nil width retains the alignment-guide fallback for custom callers.
+    let contentWidth: CGFloat?
+    /// Called when the user clicks outside the panel.
+    let onDismiss: () -> Void
     let content: AnyView
 }
 
@@ -36,12 +44,18 @@ extension View {
     /// ancestor stack. Publishing the panel as a preference and drawing it once
     /// at the root sidesteps stacking entirely — the panel is genuinely the
     /// last thing drawn, whatever it's nested in.
+    ///
+    /// - Parameter id: Must be stable while the panel is open. Use a `@State`
+    ///   UUID owned by the presenting control — never `UUID()` inline here.
     public func shadcnOverlay<Content: View>(
+        id: UUID,
         isPresented: Bool,
         edge: VerticalEdge = .bottom,
         alignment: HorizontalAlignment = .leading,
         gap: CGFloat = 4,
         contentHeight: CGFloat? = nil,
+        contentWidth: CGFloat? = nil,
+        onDismiss: @escaping () -> Void = {},
         @ViewBuilder content: () -> Content
     ) -> some View {
         let panel = content()
@@ -49,12 +63,14 @@ extension View {
             guard isPresented else { return [] }
             return [
                 ShadcnOverlayItem(
-                    id: UUID(),
+                    id: id,
                     anchor: anchor,
                     edge: edge,
                     alignment: alignment,
                     gap: gap,
                     contentHeight: contentHeight,
+                    contentWidth: contentWidth,
+                    onDismiss: onDismiss,
                     content: AnyView(panel)
                 )
             ]
@@ -62,61 +78,107 @@ extension View {
     }
 }
 
+/// Pure placement math for overlay panels. Extracted so tests can pin the
+/// "no fly-in / open upward" contract without a live window.
+public enum ShadcnOverlayPlacement {
+    /// Top-leading origin of the panel in the host's coordinate space.
+    /// Trailing and centered placement require the panel width; built-in
+    /// overlays provide it explicitly so their right edge cannot leave the host.
+    public static func origin(
+        trigger: CGRect,
+        edge: VerticalEdge,
+        alignment: HorizontalAlignment,
+        gap: CGFloat,
+        contentHeight: CGFloat?,
+        contentWidth: CGFloat? = nil
+    ) -> CGPoint {
+        let x: CGFloat
+        switch alignment {
+        case .trailing: x = trigger.maxX - (contentWidth ?? 0)
+        case .center: x = trigger.midX - (contentWidth ?? 0) / 2
+        default: x = trigger.minX
+        }
+        let y: CGFloat
+        switch edge {
+        case .top:
+            y = trigger.minY - gap - (contentHeight ?? 0)
+        default:
+            y = trigger.maxY + gap
+        }
+        return CGPoint(x: x, y: y)
+    }
+}
+
 /// Draws whatever the subtree published, above everything else.
 ///
 /// Installed automatically by `shadcnTheme(_:)` / `shadcnSurface(_:)`.
+///
+/// Placement is pure `offset` from the host's top-leading corner. For
+/// `.top`, the caller **must** pass `contentHeight` so the panel sits fully
+/// above its trigger (composer pickers do this from their row count). Without
+/// it, the panel's top edge lands on the trigger and grows downward over it.
 struct ShadcnOverlayHost: ViewModifier {
+    /// These are explicit inputs rather than environment reads. This modifier
+    /// is attached outside the theme-injection modifiers, so reading the
+    /// environment here would resolve ShadKit's default light palette while
+    /// the content below correctly renders dark.
+    let theme: ShadcnTheme
+    let palette: ShadcnPalette
+    let colorScheme: ColorScheme
+
     func body(content: Content) -> some View {
         content.overlayPreferenceValue(ShadcnOverlayKey.self) { items in
             GeometryReader { proxy in
-                ForEach(items) { item in
-                    let frame = proxy[item.anchor]
-                    item.content
-                        .fixedSize()
+                ZStack(alignment: .topLeading) {
+                    // Full-host dismiss layer — not part of the panel's own
+                    // size, so a 6000×6000 catcher can't inflate placement.
+                    if let first = items.first {
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: first.onDismiss)
+                    }
 
-                        .alignmentGuide(.leading) { size in
-                            switch item.alignment {
-                            case .trailing: size.width
-                            case .center: size.width / 2
-                            default: 0
+                    ForEach(items) { item in
+                        let frame = proxy[item.anchor]
+                        let origin = ShadcnOverlayPlacement.origin(
+                            trigger: frame,
+                            edge: item.edge,
+                            alignment: item.alignment,
+                            gap: item.gap,
+                            contentHeight: item.contentHeight,
+                            contentWidth: item.contentWidth
+                        )
+
+                        // Built-in overlays provide their fixed panel width,
+                        // so trailing/center placement is resolved before the
+                        // panel is offset. Custom nil-width overlays retain the
+                        // alignment-guide fallback below.
+                        item.content
+                            .environment(\.shadcnTheme, theme)
+                            .environment(\.shadcnPalette, palette)
+                            .environment(\.colorScheme, colorScheme)
+                            .fixedSize()
+                            // Preserve alignment for custom overlays that do
+                            // not provide a measurable panel width.
+                            .alignmentGuide(.leading) { size in
+                                guard item.contentWidth == nil else { return 0 }
+                                switch item.alignment {
+                                case .trailing: return size.width
+                                case .center: return size.width / 2
+                                default: return 0
+                                }
                             }
-                        }
-                        // Opening upward needs the panel's own height, which
-                        // isn't known at placement time. Rather than measure it,
-                        // give the panel a container that *ends* at the
-                        // trigger's top and bottom-align inside it — SwiftUI
-                        // does the arithmetic during layout.
-                        // `.top` is plumbed but does not render, and the cause
-                        // is upstream of placement: with the offset arithmetic
-                        // now correct (the caller states the panel height, so
-                        // nothing is measured during layout) the panel still
-                        // appears nowhere. Six approaches ruled out. Something
-                        // about `.top` prevents the overlay being emitted at
-                        // all — next step is a breakpoint in this closure to see
-                        // whether the item even arrives.
-                        .frame(
-                            maxWidth: .infinity,
-                            maxHeight: .infinity,
-                            alignment: .topLeading
-                        )
-                        .offset(
-                            x: originX(for: item, trigger: frame),
-                            y: item.edge == .bottom
-                                ? frame.maxY + item.gap
-                                : frame.minY - item.gap - (item.contentHeight ?? 0)
-                        )
+                            // Placement must not animate: SwiftUI would otherwise
+                            // interpolate the offset from zero and the panel flies
+                            // in from the corner.
+                            .transaction { $0.animation = nil }
+                            .offset(x: origin.x, y: origin.y)
+                    }
                 }
             }
-            // The host itself must never intercept input; only the panels do.
+            // The host itself must never intercept input when nothing is open.
             .allowsHitTesting(!items.isEmpty)
-        }
-    }
-
-    private func originX(for item: ShadcnOverlayItem, trigger: CGRect) -> CGFloat {
-        switch item.alignment {
-        case .trailing: trigger.maxX
-        case .center: trigger.midX
-        default: trigger.minX
         }
     }
 }

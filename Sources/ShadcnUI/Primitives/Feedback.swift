@@ -221,14 +221,26 @@ public struct ShadcnAvatar: View {
     private let initials: String
     private let size: ShadcnAvatarSize
     private let image: Image?
+    /// Per-identity accent (e.g. one roster member's chart colour). `nil`
+    /// keeps the original neutral `bg-muted` fallback. When set, the wash
+    /// stays a low-opacity tint of the colour (readable in light and dark)
+    /// while the initials and fallback ring pick up the full-strength
+    /// colour — same soft-badge pairing already used for chat bubble tints,
+    /// so an avatar's colour always has legible contrast against its own
+    /// background without a separate light/dark contrast table.
+    private let tint: Color?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
 
-    public init(initials: String, size: ShadcnAvatarSize = .medium, image: Image? = nil) {
+    public init(
+        initials: String, size: ShadcnAvatarSize = .medium, image: Image? = nil,
+        tint: Color? = nil
+    ) {
         self.initials = initials
         self.size = size
         self.image = image
+        self.tint = tint
     }
 
     public var body: some View {
@@ -239,14 +251,18 @@ public struct ShadcnAvatar: View {
                     .aspectRatio(contentMode: .fill)
             } else {
                 ZStack {
-                    palette.muted
+                    if let tint {
+                        tint.opacity(palette.isDark ? 0.30 : 0.18)
+                    } else {
+                        palette.muted
+                    }
                     Text(initials)
                         .font(
                             theme.typography.sans(
                                 size == .small ? theme.typography.xs : theme.typography.sm
                             )
                         )
-                        .foregroundStyle(palette.mutedForeground)
+                        .foregroundStyle(tint ?? palette.mutedForeground)
                 }
             }
         }

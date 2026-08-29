@@ -101,20 +101,38 @@ public struct UIMessage: Identifiable, Sendable {
     public var id: String
     public var role: AIMessageRole
     public var parts: [UIMessagePart]
+    public var author: String?
+    /// Display name of the peer this turn is answering, when it was produced
+    /// because that peer's message @mentioned this message's author. `nil`
+    /// for an ordinary turn — resolved by the caller at message-build time,
+    /// so a later rename does not rewrite what already-posted replies show.
+    public var replyToAuthor: String?
+    public var createdAt: Date
 
     public init(
         id: String = UUID().uuidString,
         role: AIMessageRole,
-        parts: [UIMessagePart]
+        parts: [UIMessagePart],
+        author: String? = nil,
+        replyToAuthor: String? = nil,
+        createdAt: Date = Date()
     ) {
         self.id = id
         self.role = role
         self.parts = parts
+        self.author = author
+        self.replyToAuthor = replyToAuthor
+        self.createdAt = createdAt
     }
 
     /// Convenience for a plain text turn.
-    public init(id: String = UUID().uuidString, role: AIMessageRole, text: String) {
-        self.init(id: id, role: role, parts: [.text(text)])
+    public init(
+        id: String = UUID().uuidString, role: AIMessageRole, text: String,
+        author: String? = nil, replyToAuthor: String? = nil, createdAt: Date = Date()
+    ) {
+        self.init(
+            id: id, role: role, parts: [.text(text)], author: author,
+            replyToAuthor: replyToAuthor, createdAt: createdAt)
     }
 
     /// All text parts joined — what a "copy message" action yields.

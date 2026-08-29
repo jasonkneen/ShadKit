@@ -30,8 +30,14 @@ struct PanelDemo: View {
 
     static func makeModel(populated: Bool) -> AIAssistantPanelModel {
         let model = AIAssistantPanelModel()
-        model.models = [("opus", "Claude Opus 5"), ("sonnet", "Claude Sonnet 5")]
-        model.efforts = [("auto", "Auto"), ("high", "High")]
+        model.models = [
+            (value: "opus", label: "Claude Opus 5"),
+            (value: "sonnet", label: "Claude Sonnet 5"),
+        ]
+        model.efforts = [
+            (value: "auto", label: "Auto"),
+            (value: "high", label: "High"),
+        ]
         model.model = "opus"
         model.effort = "auto"
         guard populated else { return model }

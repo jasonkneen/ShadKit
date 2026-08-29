@@ -163,6 +163,8 @@ public struct ShadcnPopover<Trigger: View, Content: View>: View {
     private let alignment: HorizontalAlignment
     private let trigger: Trigger
     private let content: Content
+    /// Stable while this control lives — never regenerated on layout.
+    @State private var overlayID = UUID()
 
     public init(
         isPresented: Binding<Bool>,
@@ -183,19 +185,16 @@ public struct ShadcnPopover<Trigger: View, Content: View>: View {
     public var body: some View {
         trigger
             .shadcnOverlay(
+                id: overlayID,
                 isPresented: isPresented,
                 edge: edge,
-                alignment: alignment
+                alignment: alignment,
+                contentWidth: width,
+                onDismiss: { isPresented = false }
             ) {
-                ZStack(alignment: .topLeading) {
-                    ShadcnDismissCatcher {
-                        withAnimation(.easeOut(duration: 0.12)) { isPresented = false }
-                    }
-                    ShadcnPanel(padding: Space.x4) { content }
-                        .frame(width: width)
-                        .fixedSize()
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                ShadcnPanel(padding: Space.x4) { content }
+                    .frame(width: width)
+                    .fixedSize()
             }
     }
 }
@@ -207,6 +206,10 @@ public struct ShadcnPopover<Trigger: View, Content: View>: View {
 public struct ShadcnMenuItem: View {
     private let title: String
     private let systemImage: String?
+    /// Brand logo (models.dev-style). Preferred over `systemImage` when set.
+    private let image: Image?
+    /// 0…1 fill for variable SF Symbols (`cellularbars`, etc.).
+    private let symbolVariableValue: Double?
     private let isSelected: Bool
     private let isDestructive: Bool
     private let action: () -> Void
@@ -218,12 +221,16 @@ public struct ShadcnMenuItem: View {
     public init(
         _ title: String,
         systemImage: String? = nil,
+        image: Image? = nil,
+        symbolVariableValue: Double? = nil,
         isSelected: Bool = false,
         isDestructive: Bool = false,
         action: @escaping () -> Void
     ) {
         self.title = title
         self.systemImage = systemImage
+        self.image = image
+        self.symbolVariableValue = symbolVariableValue
         self.isSelected = isSelected
         self.isDestructive = isDestructive
         self.action = action
@@ -237,9 +244,7 @@ public struct ShadcnMenuItem: View {
     public var body: some View {
         Button(action: action) {
             HStack(spacing: Space.x2) {
-                if let systemImage {
-                    ShadcnIconView(systemImage, size: 16)
-                }
+                leadingIcon
                 Text(title)
                     .lineLimit(1)
                 Spacer(minLength: Space.x4)
@@ -260,6 +265,52 @@ public struct ShadcnMenuItem: View {
         }
         .buttonStyle(.shadcnBare)
         .onHover { isHovering = $0 }
+    }
+
+    @ViewBuilder
+    private var leadingIcon: some View {
+        if let image {
+            image
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 16, height: 16)
+        } else if let systemImage {
+            ShadcnIconView(systemImage, size: 16, variableValue: symbolVariableValue)
+        }
+    }
+}
+
+/// One option in a `ShadcnSelect` — label plus optional brand/system icon.
+///
+/// Mirrors AI Elements' model selector rows (logo + name). Use `image` for
+/// models.dev-style brand SVGs and `systemImage` as a fallback glyph.
+/// Set `symbolVariableValue` (0…1) for multi-level symbols like `cellularbars`.
+public struct ShadcnSelectOption<Value: Hashable>: Identifiable {
+    public var id: Value { value }
+    public var value: Value
+    public var label: String
+    public var systemImage: String?
+    public var image: Image?
+    public var symbolVariableValue: Double?
+
+    public init(
+        value: Value,
+        label: String,
+        systemImage: String? = nil,
+        image: Image? = nil,
+        symbolVariableValue: Double? = nil
+    ) {
+        self.value = value
+        self.label = label
+        self.systemImage = systemImage
+        self.image = image
+        self.symbolVariableValue = symbolVariableValue
+    }
+
+    /// Convenience for plain label-only options.
+    public init(_ value: Value, label: String) {
+        self.init(value: value, label: label, systemImage: nil, image: nil)
     }
 }
 
@@ -308,6 +359,8 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
     private let alignment: HorizontalAlignment
     private let trigger: Trigger
     private let content: Content
+    /// Stable while this control lives — never regenerated on layout.
+    @State private var overlayID = UUID()
 
     public init(
         isPresented: Binding<Bool>,
@@ -330,39 +383,56 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
     public var body: some View {
         trigger
             .shadcnOverlay(
-                isPresented: isPresented, edge: edge, alignment: alignment,
-                contentHeight: contentHeight
+                id: overlayID,
+                isPresented: isPresented,
+                edge: edge,
+                alignment: alignment,
+                contentHeight: contentHeight,
+                contentWidth: minWidth,
+                onDismiss: { isPresented = false }
             ) {
-                ZStack(alignment: .topLeading) {
-                    ShadcnDismissCatcher {
-                        withAnimation(.easeOut(duration: 0.12)) { isPresented = false }
-                    }
-                    ShadcnPanel {
-                        content
-                    }
-                    .frame(minWidth: minWidth)
-                    .fixedSize()
+                // Panel only — the dismiss layer lives on the host so it
+                // cannot inflate this view's size and throw off placement.
+                ShadcnPanel {
+                    content
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                .frame(width: minWidth)
+                .fixedSize()
             }
     }
 }
 
 // MARK: - Select
 
+/// What the closed select chip shows. Dropdown rows still use full labels.
+public enum ShadcnSelectTriggerStyle: Sendable {
+    /// Brand/system icon + label + chevron (default form control).
+    case standard
+    /// Icon + chevron only — compact provider or agent selector.
+    case iconOnly
+    /// One glyph with no redundant label or chevron — compact level indicators.
+    case symbolOnly
+    /// Label + chevron only — model name without a second brand mark.
+    case labelOnly
+}
+
 /// Radix `Select` — a trigger showing the current value plus a dropdown of
 /// options. Trigger chrome matches `Input`.
 public struct ShadcnSelect<Value: Hashable>: View {
     private let placeholder: String
     @Binding private var selection: Value?
-    private let options: [(value: Value, label: String)]
+    private let options: [ShadcnSelectOption<Value>]
     private let width: CGFloat?
     /// Composer-sized: 28pt tall at `text-xs`, rather than the 36pt form control.
     private let isCompact: Bool
-    /// Accepted but still not working. `.top` computes the right offset now
-    /// (the caller states the panel height, so no layout-time measurement is
-    /// needed) yet the panel renders nowhere — see `ShadcnOverlayHost`.
+    /// What the closed chip shows (menu rows always show full label + icon).
+    private let triggerStyle: ShadcnSelectTriggerStyle
+    /// Open direction relative to the trigger. Composer pickers use `.top` so
+    /// the menu stays inside a bottom-docked panel instead of clipping below it.
     private let edge: VerticalEdge
+    /// Long lists scroll inside this many rows instead of growing the panel
+    /// off-screen (upward placement uses this for `contentHeight`).
+    private let maxVisibleRows: Int
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -376,27 +446,78 @@ public struct ShadcnSelect<Value: Hashable>: View {
         width: CGFloat? = nil,
         startsOpen: Bool = false,
         isCompact: Bool = false,
+        triggerStyle: ShadcnSelectTriggerStyle = .standard,
         edge: VerticalEdge = .bottom,
-        options: [(value: Value, label: String)]
+        maxVisibleRows: Int = 8,
+        options: [ShadcnSelectOption<Value>]
     ) {
         self.placeholder = placeholder
         self._selection = selection
         self.options = options
         self.width = width
         self.isCompact = isCompact
+        self.triggerStyle = triggerStyle
         self.edge = edge
+        self.maxVisibleRows = max(1, maxVisibleRows)
         self._isOpen = State(initialValue: startsOpen)
     }
 
-    /// `ShadcnMenuItem` is `py-1.5` around a `text-sm` line; the panel adds
-    /// `p-1` plus its border.
-    static func panelHeight(rows: Int) -> CGFloat {
-        let row = Space.x1_5 * 2 + 18
-        return CGFloat(rows) * row + Space.x1 * 2 + 2
+    /// Label-only convenience — same as the original API.
+    public init(
+        _ placeholder: String,
+        selection: Binding<Value?>,
+        width: CGFloat? = nil,
+        startsOpen: Bool = false,
+        isCompact: Bool = false,
+        triggerStyle: ShadcnSelectTriggerStyle = .standard,
+        edge: VerticalEdge = .bottom,
+        maxVisibleRows: Int = 8,
+        options: [(value: Value, label: String)]
+    ) {
+        self.init(
+            placeholder,
+            selection: selection,
+            width: width,
+            startsOpen: startsOpen,
+            isCompact: isCompact,
+            triggerStyle: triggerStyle,
+            edge: edge,
+            maxVisibleRows: maxVisibleRows,
+            options: options.map { ShadcnSelectOption(value: $0.value, label: $0.label) }
+        )
     }
 
-    private var currentLabel: String? {
-        options.first { $0.value == selection }?.label
+    /// One menu row: `py-1.5` around a `text-sm` line.
+    public static var rowHeight: CGFloat { Space.x1_5 * 2 + 18 }
+
+    /// Panel chrome: `p-1` plus 1pt border on each side.
+    public static var panelChrome: CGFloat { Space.x1 * 2 + 2 }
+
+    /// Height used for placement. Caps at `maxVisibleRows` so a 30-item list
+    /// opening upward doesn't push its top edge off the host and leave only
+    /// the last few rows visible near the trigger.
+    public static func panelHeight(rows: Int, maxVisibleRows: Int = 8) -> CGFloat {
+        let visible = min(max(rows, 0), max(1, maxVisibleRows))
+        return CGFloat(visible) * rowHeight + panelChrome
+    }
+
+    /// Back-compat: uncapped height for a given row count.
+    public static func panelHeight(rows: Int) -> CGFloat {
+        panelHeight(rows: rows, maxVisibleRows: max(rows, 1))
+    }
+
+    private var current: ShadcnSelectOption<Value>? {
+        options.first { $0.value == selection }
+    }
+
+    private var currentLabel: String? { current?.label }
+
+    private var needsScroll: Bool {
+        options.count > maxVisibleRows
+    }
+
+    private var menuHeight: CGFloat {
+        Self.panelHeight(rows: options.count, maxVisibleRows: maxVisibleRows)
     }
 
     public var body: some View {
@@ -404,51 +525,146 @@ public struct ShadcnSelect<Value: Hashable>: View {
             isPresented: $isOpen,
             minWidth: width ?? 180,
             edge: edge,
-            // A menu's height is its rows plus the panel's own padding, so it
-            // can be stated rather than measured.
-            contentHeight: edge == .top ? Self.panelHeight(rows: options.count) : nil
+            // Placement height is the *visible* panel, not the unscoped list.
+            contentHeight: edge == .top ? menuHeight : nil
         ) {
             Button {
-                withAnimation(.easeOut(duration: 0.12)) { isOpen.toggle() }
+                // No withAnimation — animating isOpen re-introduces the fly-in
+                // as the host repositions the panel.
+                isOpen.toggle()
             } label: {
-                HStack(spacing: Space.x2) {
-                    Text(currentLabel ?? placeholder)
-                        .foregroundStyle(
-                            currentLabel == nil ? palette.mutedForeground : palette.foreground
-                        )
-                        .lineLimit(1)
-                    Spacer(minLength: Space.x2)
-                    ShadcnIconView(ShadcnIcon.chevronDown, size: 16)
-                        .foregroundStyle(palette.mutedForeground.opacity(0.8))
-                }
-                .font(
-                    theme.typography.sans(
-                        isCompact ? theme.typography.xs : theme.typography.sm))
-                .padding(.horizontal, isCompact ? Space.x2 : Space.x3)
-                .frame(height: isCompact ? 28 : 36)
-                .frame(width: width)
-                .background(
-                    RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                        .fill(palette.isDark ? palette.input.opacity(0.3) : palette.background)
-                )
-                .shadcnBorder(
-                    isOpen ? palette.ring : palette.input,
-                    cornerRadius: theme.radius.md
-                )
-                .shadcnShadow(.xs)
-                .contentShape(Rectangle())
+                triggerLabel
+                    .font(
+                        theme.typography.sans(
+                            isCompact ? theme.typography.xs : theme.typography.sm))
+                    .padding(.horizontal, triggerHorizontalPadding)
+                    .frame(height: isCompact ? 28 : 36)
+                    .frame(width: width)
+                    .frame(minWidth: triggerMinWidth)
+                    .background(
+                        RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
+                            .fill(palette.isDark ? palette.input.opacity(0.3) : palette.background)
+                    )
+                    .shadcnBorder(
+                        isOpen ? palette.ring : palette.input,
+                        cornerRadius: theme.radius.md
+                    )
+                    .shadcnShadow(.xs)
+                    .contentShape(Rectangle())
+                    .accessibilityLabel(currentLabel ?? placeholder)
             }
             .buttonStyle(.shadcnBare)
             .opacity(isEnabled ? 1 : 0.5)
+            .help(currentLabel ?? placeholder)
         } content: {
-            ForEach(options, id: \.value) { option in
-                ShadcnMenuItem(
-                    option.label,
-                    isSelected: option.value == selection
-                ) {
-                    selection = option.value
-                    withAnimation(.easeOut(duration: 0.12)) { isOpen = false }
+            // Cap tall lists: without this, upward placement offsets by the
+            // full content height and only the tail of the list sits near the
+            // trigger (looks like a broken, truncated popup).
+            if needsScroll {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        menuRows
+                    }
                 }
+                .frame(height: CGFloat(maxVisibleRows) * Self.rowHeight)
+            } else {
+                VStack(spacing: 0) {
+                    menuRows
+                }
+            }
+        }
+    }
+
+    private var triggerHorizontalPadding: CGFloat {
+        switch triggerStyle {
+        case .iconOnly, .symbolOnly: Space.x1_5
+        case .labelOnly, .standard: isCompact ? Space.x2 : Space.x3
+        }
+    }
+
+    private var triggerMinWidth: CGFloat? {
+        // Icon chips hug content; fixed width still wins when set.
+        guard width == nil else { return nil }
+        switch triggerStyle {
+        case .iconOnly, .symbolOnly: return isCompact ? 28 : 34
+        case .labelOnly: return nil // hug model name
+        case .standard: return nil
+        }
+    }
+
+    private var chevron: some View {
+        ShadcnIconView(ShadcnIcon.chevronDown, size: triggerStyle == .iconOnly ? 9 : 11)
+            .foregroundStyle(palette.mutedForeground.opacity(0.75))
+    }
+
+    @ViewBuilder
+    private var triggerLabel: some View {
+        switch triggerStyle {
+        case .iconOnly:
+            // Brand glyph plus a tiny chevron affordance.
+            HStack(spacing: 2) {
+                triggerIcon(size: isCompact ? 14 : 16)
+                chevron
+            }
+        case .symbolOnly:
+            triggerIcon(size: isCompact ? 16 : 18)
+        case .labelOnly:
+            // Model name only — no second brand mark.
+            HStack(spacing: Space.x1) {
+                Text(currentLabel ?? placeholder)
+                    .foregroundStyle(
+                        currentLabel == nil ? palette.mutedForeground : palette.foreground
+                    )
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                chevron
+            }
+        case .standard:
+            HStack(spacing: Space.x2) {
+                triggerIcon(size: isCompact ? 12 : 14)
+                Text(currentLabel ?? placeholder)
+                    .foregroundStyle(
+                        currentLabel == nil ? palette.mutedForeground : palette.foreground
+                    )
+                    .lineLimit(1)
+                Spacer(minLength: Space.x2)
+                chevron
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func triggerIcon(size: CGFloat) -> some View {
+        if let image = current?.image {
+            image
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else if let systemImage = current?.systemImage {
+            ShadcnIconView(
+                systemImage, size: size,
+                variableValue: current?.symbolVariableValue)
+                .foregroundStyle(palette.foreground.opacity(0.9))
+        } else {
+            // Keep icon-only chips from collapsing when nothing is selected.
+            ShadcnIconView(ShadcnIcon.sparkles, size: size)
+                .foregroundStyle(palette.mutedForeground)
+        }
+    }
+
+    @ViewBuilder
+    private var menuRows: some View {
+        ForEach(options) { option in
+            ShadcnMenuItem(
+                option.label,
+                systemImage: option.systemImage,
+                image: option.image,
+                symbolVariableValue: option.symbolVariableValue,
+                isSelected: option.value == selection
+            ) {
+                selection = option.value
+                isOpen = false
             }
         }
     }

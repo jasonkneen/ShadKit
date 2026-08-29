@@ -5,6 +5,28 @@ import XCTest
 /// against these names, so the mapping is worth pinning.
 final class UIMessageTests: XCTestCase {
 
+    func testAuthorAndTimestampMetadataDoNotChangeCanonicalText() {
+        let timestamp = Date(timeIntervalSince1970: 123)
+        let legacy = UIMessage(role: .assistant, text: "plain")
+        let attributed = UIMessage(
+            role: .assistant, text: "plain", author: "Claude",
+            createdAt: timestamp)
+        XCTAssertNil(legacy.author)
+        XCTAssertEqual(attributed.author, "Claude")
+        XCTAssertEqual(attributed.createdAt, timestamp)
+        XCTAssertEqual(attributed.text, "plain")
+    }
+
+    func testAgentBubbleColourSlotsAreStableAndBounded() {
+        XCTAssertEqual(
+            AIMessageView.agentColorSlot(for: "Sonnet"),
+            AIMessageView.agentColorSlot(for: "sonnet"))
+        XCTAssertTrue((0..<5).contains(AIMessageView.agentColorSlot(for: "Opus")))
+        XCTAssertNotEqual(
+            AIMessageView.agentColorSlot(for: "Sonnet"),
+            AIMessageView.agentColorSlot(for: "Codex"))
+    }
+
     func testToolStateRawValuesMatchTheSDKStrings() {
         // These cross the wire from Claude, ACP and Codex; a rename breaks them.
         XCTAssertEqual(AIToolState.inputStreaming.rawValue, "input-streaming")

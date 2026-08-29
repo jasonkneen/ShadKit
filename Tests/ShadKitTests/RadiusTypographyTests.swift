@@ -56,6 +56,14 @@ final class RadiusTypographyTests: XCTestCase {
         XCTAssertEqual(sizes, sizes.sorted())
     }
 
+    func testInterfaceScalingMovesEveryTypeStepAndLineBoxTogether() {
+        let compact = ShadcnTypography.compact()
+        let large = compact.scaled(by: 19.0 / 15.0)
+        XCTAssertEqual(large.base.size, compact.base.size * 19.0 / 15.0, accuracy: 0.001)
+        XCTAssertEqual(large.xs.lineHeight, compact.xs.lineHeight * 19.0 / 15.0, accuracy: 0.001)
+        XCTAssertGreaterThan(large.xl2.size, compact.xl2.size)
+    }
+
     func testLineSpacingIsTheDeltaOverNaturalLeading() {
         // SwiftUI adds leading on top of the font's own line height, so the CSS
         // line-height has to be expressed as a difference, never negative.

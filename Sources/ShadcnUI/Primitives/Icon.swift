@@ -18,6 +18,7 @@ public enum ShadcnIcon {
     public static let circleFilled = "circle.fill"
     public static let clock = "clock"
     public static let brain = "brain"
+    public static let cellularBars = "cellularbars"
     public static let wrench = "wrench.adjustable"
     public static let search = "magnifyingglass"
     public static let copy = "doc.on.doc"
@@ -51,6 +52,7 @@ public enum ShadcnIcon {
     public static let database = "cylinder.split.1x2"
     public static let cpu = "cpu"
     public static let terminal = "terminal"
+    public static let chat = "bubble.left"
     public static let folder = "folder"
     public static let link = "link"
     public static let shield = "checkmark.shield"
@@ -65,20 +67,37 @@ public enum ShadcnIcon {
 ///
 /// Lucide draws on a 24pt grid with a 2pt stroke, which reads a little heavier
 /// than SF Symbols at `.regular`, so this leans on `.medium`.
+///
+/// Pass `variableValue` (0…1) for multi-level SF Symbols such as
+/// `cellularbars` (phone signal bars at different fill levels).
 public struct ShadcnIconView: View {
     private let systemName: String
     private let size: CGFloat
     private let weight: Font.Weight
+    private let variableValue: Double?
 
-    public init(_ systemName: String, size: CGFloat = 16, weight: Font.Weight = .medium) {
+    public init(
+        _ systemName: String,
+        size: CGFloat = 16,
+        weight: Font.Weight = .medium,
+        variableValue: Double? = nil
+    ) {
         self.systemName = systemName
         self.size = size
         self.weight = weight
+        self.variableValue = variableValue
     }
 
     public var body: some View {
-        Image(systemName: systemName)
-            .font(.system(size: size * 0.86, weight: weight))
-            .frame(width: size, height: size)
+        Group {
+            if let variableValue {
+                Image(systemName: systemName, variableValue: min(1, max(0, variableValue)))
+            } else {
+                Image(systemName: systemName)
+            }
+        }
+        .font(.system(size: size * 0.86, weight: weight))
+        .frame(width: size, height: size)
+        .symbolRenderingMode(variableValue == nil ? .monochrome : .hierarchical)
     }
 }

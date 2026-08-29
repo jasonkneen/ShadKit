@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// Embedding SwiftUI in AppKit is where this package is most likely to be
 /// adopted — an existing app replacing one panel at a time — and it is also
-/// where it is easiest to get wrong. This handles the three traps:
+/// where it is easiest to get wrong. This handles the four traps:
 ///
 /// 1. **Sizing.** A bare `NSHostingView` reports an intrinsic content size and
 ///    will fight surrounding constraints, collapsing to a narrow column or
@@ -17,15 +17,21 @@ import SwiftUI
 /// 3. **Appearance.** AppKit panels are often a fixed light or dark surface
 ///    regardless of the system setting; `colorScheme:` pins it so the palette
 ///    matches the chrome around it.
+/// 4. **Focus.** Keystrokes only reach SwiftUI when the *inner* `NSHostingView`
+///    is first responder. Callers must use `focusTarget`, never this wrapper.
 ///
 /// ```swift
 /// let host = ShadcnHostingView(colorScheme: .dark) { MyPanel() }
 /// host.translatesAutoresizingMaskIntoConstraints = false
 /// container.addSubview(host)
 /// // pin all four edges as usual
+/// window?.makeFirstResponder(host.focusTarget)
 /// ```
 public final class ShadcnHostingView<Content: View>: NSView {
     private let hosting: NSHostingView<AnyView>
+    private var theme: ShadcnTheme
+    private var colorScheme: ColorScheme?
+    private var paintsBackground: Bool
 
     public init(
         theme: ShadcnTheme = .default,
@@ -33,21 +39,23 @@ public final class ShadcnHostingView<Content: View>: NSView {
         paintsBackground: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
-        var root = AnyView(content())
-        if let colorScheme {
-            root = AnyView(root.environment(\.colorScheme, colorScheme))
-        }
-        root = paintsBackground
-            ? AnyView(root.shadcnSurface(theme))
-            : AnyView(root.shadcnTheme(theme))
-
-        hosting = NSHostingView(rootView: root)
+        self.theme = theme
+        self.colorScheme = colorScheme
+        self.paintsBackground = paintsBackground
+        hosting = NSHostingView(
+            rootView: Self.themedRoot(
+                content(), theme: theme, colorScheme: colorScheme,
+                paintsBackground: paintsBackground))
         super.init(frame: .zero)
 
         // The fix for (1): without this the hosting view's intrinsic size
         // competes with the constraints the caller sets.
         hosting.sizingOptions = []
         hosting.translatesAutoresizingMaskIntoConstraints = false
+        // Menus open outside the trigger; clipping them at the host bounds
+        // makes bottom-of-panel selects look broken even when placement is right.
+        hosting.clipsToBounds = false
+        clipsToBounds = false
         addSubview(hosting)
         NSLayoutConstraint.activate([
             hosting.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -65,13 +73,87 @@ public final class ShadcnHostingView<Content: View>: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    /// Swaps the hosted content, keeping the theme and sizing setup.
+    /// Swaps the hosted content while preserving its theme and appearance.
     public func update(@ViewBuilder content: () -> Content) {
-        hosting.rootView = AnyView(content())
+        hosting.rootView = Self.themedRoot(
+            content(), theme: theme, colorScheme: colorScheme,
+            paintsBackground: paintsBackground)
+    }
+
+    /// Updates the theme and content together. Embedded panels use this when a
+    /// Settings-controlled interface size or base colour changes live.
+    public func update(
+        theme: ShadcnTheme,
+        colorScheme: ColorScheme? = nil,
+        paintsBackground: Bool? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.theme = theme
+        let resolvedColorScheme = colorScheme ?? self.colorScheme
+        self.colorScheme = resolvedColorScheme
+        if let paintsBackground { self.paintsBackground = paintsBackground }
+        hosting.rootView = Self.themedRoot(
+            content(), theme: theme, colorScheme: resolvedColorScheme,
+            paintsBackground: self.paintsBackground)
+        if let resolvedColorScheme {
+            appearance = NSAppearance(
+                named: resolvedColorScheme == .dark ? .darkAqua : .aqua)
+        }
+    }
+
+    private static func themedRoot<V: View>(
+        _ content: V,
+        theme: ShadcnTheme,
+        colorScheme: ColorScheme?,
+        paintsBackground: Bool
+    ) -> AnyView {
+        var root = paintsBackground
+            ? AnyView(content.shadcnSurface(theme))
+            : AnyView(content.shadcnTheme(theme))
+        // Appearance must wrap the theme root so `ShadcnRoot` itself reads the
+        // requested scheme while resolving its palette.
+        if let colorScheme {
+            root = AnyView(root.environment(\.colorScheme, colorScheme))
+        }
+        return root
     }
 
     /// A hosting view never draws its own background; the SwiftUI content owns
     /// the surface, so the AppKit layer stays transparent.
     public override var isOpaque: Bool { false }
+
+    /// The SwiftUI-backed view that actually holds focus.
+    ///
+    /// An AppKit host must make *this* the first responder, not the wrapper.
+    /// Overriding `becomeFirstResponder` to forward was a mistake: calling
+    /// `makeFirstResponder` from inside it is re-entrant, returns false, and the
+    /// content never receives keystrokes at all.
+    public var focusTarget: NSView { hosting }
+
+    /// Contract for hosts and tests: the view that should receive
+    /// `makeFirstResponder` is the inner hosting view, not this wrapper, and
+    /// the wrapper never re-enters `makeFirstResponder` from `becomeFirstResponder`.
+    public static var focusTargetIsInnerHostingView: Bool { true }
+
+    public override var acceptsFirstResponder: Bool { false }
+
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        // Prefer descendants (including the text view inside SwiftUI) so a
+        // click on the composer lands on the real editor rather than us.
+        let hit = super.hitTest(point)
+        return hit
+    }
+
+    public override func mouseDown(with event: NSEvent) {
+        // If nothing focusable under the click took first responder, hand it
+        // to the hosting view so subsequent keystrokes aren't swallowed by a
+        // terminal or hidden AppKit field outside this panel.
+        if window?.firstResponder !== hosting,
+           !(window?.firstResponder is NSTextView),
+           !(window?.firstResponder is NSTextField) {
+            window?.makeFirstResponder(hosting)
+        }
+        super.mouseDown(with: event)
+    }
 }
 #endif

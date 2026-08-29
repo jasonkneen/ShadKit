@@ -9,15 +9,20 @@ public struct AIMessageView: View {
     private let message: UIMessage
     private let onCopy: ((UIMessage) -> Void)?
     private let onRegenerate: ((UIMessage) -> Void)?
+    private let usesAgentBubble: Bool
+
+    @Environment(\.shadcnPalette) private var palette
 
     public init(
         message: UIMessage,
         onCopy: ((UIMessage) -> Void)? = nil,
-        onRegenerate: ((UIMessage) -> Void)? = nil
+        onRegenerate: ((UIMessage) -> Void)? = nil,
+        usesAgentBubble: Bool = false
     ) {
         self.message = message
         self.onCopy = onCopy
         self.onRegenerate = onRegenerate
+        self.usesAgentBubble = usesAgentBubble
     }
 
     private var sources: [AISource] {
@@ -36,6 +41,12 @@ public struct AIMessageView: View {
 
     public var body: some View {
         AIMessage(message.role) {
+            if message.role == .assistant, let author = message.author {
+                Text(author)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Response from \(author)")
+            }
             if !attachments.isEmpty {
                 AIMessageAttachments {
                     ForEach(attachments) { file in
@@ -76,21 +87,78 @@ public struct AIMessageView: View {
                 }
             }
 
-            if message.role == .assistant, onCopy != nil || onRegenerate != nil {
-                AIMessageActions {
-                    if let onCopy {
-                        AIMessageAction(systemImage: ShadcnIcon.copy, tooltip: "Copy") {
-                            onCopy(message)
-                        }
-                    }
-                    if let onRegenerate {
-                        AIMessageAction(systemImage: ShadcnIcon.refresh, tooltip: "Regenerate") {
-                            onRegenerate(message)
+            if message.role != .system {
+                HStack(spacing: Space.x1) {
+                    AIRelativeTimestamp(date: message.createdAt)
+                    if message.role == .assistant {
+                        AIMessageActions {
+                            if let onCopy {
+                                AIMessageAction(systemImage: ShadcnIcon.copy, tooltip: "Copy") {
+                                    onCopy(message)
+                                }
+                            }
+                            if let onRegenerate {
+                                AIMessageAction(
+                                    systemImage: ShadcnIcon.refresh,
+                                    tooltip: "Regenerate"
+                                ) {
+                                    onRegenerate(message)
+                                }
+                            }
                         }
                     }
                 }
+                .frame(
+                    maxWidth: message.role == .assistant ? .infinity : nil,
+                    alignment: message.role == .user ? .trailing : .leading)
             }
         }
+        .environment(\.aiAssistantBubbleTint, agentBubbleTint)
+    }
+
+    private var agentBubbleTint: Color? {
+        guard usesAgentBubble, message.role == .assistant,
+              let author = message.author, !author.isEmpty else { return nil }
+        let colors = [
+            palette.chart1, palette.chart2, palette.chart3,
+            palette.chart4, palette.chart5,
+        ]
+        return colors[Self.agentColorSlot(for: author)]
+            .opacity(palette.isDark ? 0.14 : 0.09)
+    }
+
+    /// Stable across launches (unlike Swift's randomized `Hasher`) so each
+    /// auto-named agent keeps the same subtle bubble colour.
+    static func agentColorSlot(for author: String) -> Int {
+        var hash: UInt32 = 2_166_136_261
+        for byte in author.lowercased().utf8 {
+            hash = (hash ^ UInt32(byte)) &* 16_777_619
+        }
+        return Int(hash % 5)
+    }
+}
+
+private struct AIRelativeTimestamp: View {
+    let date: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            Text(Self.label(for: date, now: context.date))
+                .font(.system(size: 10, weight: .regular))
+                .foregroundStyle(.secondary.opacity(0.72))
+                .help(date.formatted(date: .abbreviated, time: .shortened))
+                .accessibilityLabel(
+                    "Sent \(date.formatted(date: .complete, time: .shortened))")
+        }
+    }
+
+    static func label(for date: Date, now: Date) -> String {
+        let seconds = max(Int(now.timeIntervalSince(date)), 0)
+        if seconds < 60 { return "now" }
+        if seconds < 3_600 { return "\(seconds / 60)m" }
+        if seconds < 86_400 { return "\(seconds / 3_600)h" }
+        if seconds < 604_800 { return "\(seconds / 86_400)d" }
+        return date.formatted(date: .abbreviated, time: .omitted)
     }
 }
 

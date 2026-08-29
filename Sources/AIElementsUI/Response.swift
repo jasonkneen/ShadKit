@@ -13,6 +13,7 @@ public struct AIResponse: View {
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @Environment(\.aiMessageTextSize) private var messageTextSize
 
     public init(_ markdown: String) {
         self.markdown = markdown
@@ -39,20 +40,20 @@ public struct AIResponse: View {
 
         case let .paragraph(text):
             inline(text)
-                .font(theme.typography.sans(theme.typography.sm))
-                .lineSpacing(theme.typography.sm.lineSpacing)
+                .font(theme.typography.sans(bodyStep))
+                .lineSpacing(bodyStep.lineSpacing)
 
         case let .list(items, isOrdered):
             VStack(alignment: .leading, spacing: Space.x1_5) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .firstTextBaseline, spacing: Space.x2) {
                         Text(isOrdered ? "\(index + 1)." : "•")
-                            .font(theme.typography.sans(theme.typography.sm))
+                            .font(theme.typography.sans(bodyStep))
                             .foregroundStyle(palette.mutedForeground)
                             .frame(minWidth: isOrdered ? 18 : 10, alignment: .trailing)
                         inline(item)
-                            .font(theme.typography.sans(theme.typography.sm))
-                            .lineSpacing(theme.typography.sm.lineSpacing)
+                            .font(theme.typography.sans(bodyStep))
+                            .lineSpacing(bodyStep.lineSpacing)
                     }
                 }
             }
@@ -67,9 +68,9 @@ public struct AIResponse: View {
                     .fill(palette.border)
                     .frame(width: 2)
                 inline(text)
-                    .font(theme.typography.sans(theme.typography.sm))
+                    .font(theme.typography.sans(bodyStep))
                     .foregroundStyle(palette.mutedForeground)
-                    .lineSpacing(theme.typography.sm.lineSpacing)
+                    .lineSpacing(bodyStep.lineSpacing)
             }
             .fixedSize(horizontal: false, vertical: true)
 
@@ -78,13 +79,21 @@ public struct AIResponse: View {
         }
     }
 
+    private var bodyStep: ShadcnTypography.Step {
+        ShadcnTypography.Step(
+            size: messageTextSize,
+            lineHeight: max(messageTextSize * 1.45, messageTextSize + 6))
+    }
+
     private func headingFont(_ level: Int) -> Font {
+        let multiplier: CGFloat
         switch level {
-        case 1: theme.typography.sans(theme.typography.xl2, weight: .semibold)
-        case 2: theme.typography.sans(theme.typography.xl, weight: .semibold)
-        case 3: theme.typography.sans(theme.typography.lg, weight: .semibold)
-        default: theme.typography.sans(theme.typography.base, weight: .semibold)
+        case 1: multiplier = 1.65
+        case 2: multiplier = 1.4
+        case 3: multiplier = 1.2
+        default: multiplier = 1.08
         }
+        return .system(size: messageTextSize * multiplier, weight: .semibold)
     }
 
     /// Renders inline markdown, falling back to the raw text if it doesn't

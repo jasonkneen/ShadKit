@@ -48,7 +48,10 @@ private struct ShadcnRoot: ViewModifier {
             .background(paintsBackground ? palette.background : .clear)
             // Popovers, dropdowns and selects draw here rather than inline, so
             // no ancestor's stacking order can paint over an open panel.
-            .modifier(ShadcnOverlayHost())
+            .modifier(
+                ShadcnOverlayHost(
+                    theme: theme, palette: palette, colorScheme: colorScheme)
+            )
     }
 }
 

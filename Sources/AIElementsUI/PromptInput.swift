@@ -22,6 +22,13 @@ public struct AIPromptInputStyle: Sendable {
     public var background: Color?
     /// Horizontal inset on the textarea. ChatGPT and Grok use `px-5`.
     public var textFieldHorizontalPadding: CGFloat
+    /// Extra trailing room reserved for controls overlaid in the prompt's top-right.
+    public var textFieldTrailingAccessoryWidth: CGFloat
+    /// When set, replaces the default input/ring border. Used for composer
+    /// modes that need a distinct shell (bash `!` is pink).
+    public var borderColor: Color?
+    /// When set, replaces the textarea foreground colour.
+    public var textColor: Color?
     /// `true` renders the textarea at `text-base` rather than `text-sm`.
     public var usesLargeText: Bool
     /// Padding around the footer row. ChatGPT and Grok use `p-2.5`.
@@ -38,6 +45,9 @@ public struct AIPromptInputStyle: Sendable {
         cornerRadius: CGFloat? = nil,
         background: Color? = nil,
         textFieldHorizontalPadding: CGFloat = Space.x2,
+        textFieldTrailingAccessoryWidth: CGFloat = 0,
+        borderColor: Color? = nil,
+        textColor: Color? = nil,
         usesLargeText: Bool = false,
         footerPadding: CGFloat = Space.x3,
         submitIsCircular: Bool = false,
@@ -47,6 +57,9 @@ public struct AIPromptInputStyle: Sendable {
         self.cornerRadius = cornerRadius
         self.background = background
         self.textFieldHorizontalPadding = textFieldHorizontalPadding
+        self.textFieldTrailingAccessoryWidth = textFieldTrailingAccessoryWidth
+        self.borderColor = borderColor
+        self.textColor = textColor
         self.usesLargeText = usesLargeText
         self.footerPadding = footerPadding
         self.submitIsCircular = submitIsCircular
@@ -132,9 +145,13 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // `align="block-start"`-style header, used for attachment chips.
-            header
-                .padding(.horizontal, style.textFieldHorizontalPadding)
-                .padding(.top, Space.x3)
+            // Skip padding when empty so a compact composer doesn't waste a
+            // full top inset on `EmptyView` (that was eating popover height).
+            if Header.self != EmptyView.self {
+                header
+                    .padding(.horizontal, style.textFieldHorizontalPadding)
+                    .padding(.top, Space.x3)
+            }
 
             ShadcnPlainTextEditor(
                 text: $text,
@@ -143,10 +160,24 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
                 maxHeight: style.maxTextHeight,
                 font: style.usesLargeText
                     ? theme.typography.sans(theme.typography.base)
-                    : nil
+                    : nil,
+                fontSize: style.usesLargeText
+                    ? theme.typography.base.size
+                    : theme.typography.sm.size,
+                textColor: style.textColor,
+                focus: $isFocused,
+                // Enter submits; Shift+Enter inserts a newline (composer UX).
+                onSubmit: {
+                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    else { return }
+                    onSubmit()
+                }
             )
-            .focused($isFocused)
-            .padding(.horizontal, style.textFieldHorizontalPadding)
+            .padding(.leading, style.textFieldHorizontalPadding)
+            .padding(
+                .trailing,
+                style.textFieldHorizontalPadding + style.textFieldTrailingAccessoryWidth
+            )
             .padding(.top, Space.x2)
 
             // `align="block-end"`: tools left, submit right.
@@ -167,13 +198,19 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
                 .fill(fill)
         )
         .shadcnBorder(
-            isFocused ? palette.ring : palette.input,
+            style.borderColor ?? (isFocused ? palette.ring : palette.input),
+            width: style.borderColor == nil ? 1 : 2,
             cornerRadius: cornerRadius
         )
-        .shadcnFocusRing(isFocused, palette: palette, cornerRadius: cornerRadius)
+        .applyIf(style.borderColor == nil) { view in
+            view.shadcnFocusRing(
+                isFocused, palette: palette, cornerRadius: cornerRadius)
+        }
         .shadcnShadow(.xs)
         .animation(.easeOut(duration: 0.12), value: isFocused)
-        .onTapGesture { isFocused = true }
+        // Do NOT put `.onTapGesture` on this container: on AppKit it steals the
+        // mouse-down from the NSTextView inside and the composer never focuses.
+        // Focus is driven by the editor itself (and by programmatic FocusState).
     }
 
     @ViewBuilder

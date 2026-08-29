@@ -51,11 +51,19 @@ public struct ShadcnTypography: Sendable {
     /// Family used for body copy. `nil` means the platform UI font, which is
     /// what shadcn's default stack resolves to on macOS.
     public var sansFamily: String?
+    /// Base weight for the sans-serif font. Defaults to `.regular`.
+    /// Used by `sans(_:weight:)` to resolve the final weight.
+    public var sansWeight: Font.Weight = .regular
     /// Family used for code. `nil` means the platform monospace font.
     public var monoFamily: String?
 
-    public init(sansFamily: String? = nil, monoFamily: String? = nil) {
+    public init(
+        sansFamily: String? = nil,
+        sansWeight: Font.Weight = .regular,
+        monoFamily: String? = nil
+    ) {
         self.sansFamily = sansFamily
+        self.sansWeight = sansWeight
         self.monoFamily = monoFamily
     }
 
@@ -63,9 +71,13 @@ public struct ShadcnTypography: Sendable {
     /// where the web scale reads oversized.
     public static func compact(
         sansFamily: String? = nil,
+        sansWeight: Font.Weight = .regular,
         monoFamily: String? = nil
     ) -> ShadcnTypography {
-        var scale = ShadcnTypography(sansFamily: sansFamily, monoFamily: monoFamily)
+        var scale = ShadcnTypography(
+            sansFamily: sansFamily,
+            sansWeight: sansWeight,
+            monoFamily: monoFamily)
         scale.xs = Step(size: 11, lineHeight: 15)
         scale.sm = Step(size: 12.5, lineHeight: 18)
         scale.base = Step(size: 14, lineHeight: 21)
@@ -75,11 +87,53 @@ public struct ShadcnTypography: Sendable {
         return scale
     }
 
-    public func sans(_ step: Step, weight: Font.Weight = .regular) -> Font {
-        if let sansFamily {
-            return .custom(sansFamily, size: step.size).weight(weight)
+    /// Scales the complete type ramp, including line boxes, while retaining
+    /// the configured font families and weights. Useful for one Settings-controlled
+    /// interface size rather than per-component font overrides.
+    public func scaled(by factor: CGFloat) -> ShadcnTypography {
+        let factor = min(max(factor, 0.7), 1.6)
+        func scaled(_ step: Step) -> Step {
+            Step(size: step.size * factor, lineHeight: step.lineHeight * factor)
         }
-        return .system(size: step.size, weight: weight)
+        var result = self
+        result.xs = scaled(xs)
+        result.sm = scaled(sm)
+        result.base = scaled(base)
+        result.lg = scaled(lg)
+        result.xl = scaled(xl)
+        result.xl2 = scaled(xl2)
+        result.sansWeight = sansWeight
+        return result
+    }
+
+    /// Font weight ladder for offset calculation. Ensures component weights
+    /// like `.medium` scale relative to the base, not as absolute values.
+    /// Base=Regular: .medium stays medium. Base=SemiBold: .medium becomes bold.
+    private static let ladder: [Font.Weight] = [
+        .ultraLight, .thin, .light, .regular, .medium, .semibold, .bold, .heavy, .black,
+    ]
+
+    /// Resolve a requested weight relative to the configured base weight.
+    /// Treats component weights as offsets, not floors — ensures emphasis
+    /// scales with the user's chosen font weight.
+    static func resolve(_ weight: Font.Weight?, base: Font.Weight) -> Font.Weight {
+        guard let weight else { return base }
+        guard let requested = ladder.firstIndex(of: weight),
+              let baseIndex = ladder.firstIndex(of: base),
+              let regular = ladder.firstIndex(of: .regular)
+        else { return weight }
+        // Offset = (requested - regular); apply that offset to base
+        let offset = requested - regular
+        let resolved = baseIndex + offset
+        return ladder[min(max(resolved, 0), ladder.count - 1)]
+    }
+
+    public func sans(_ step: Step, weight: Font.Weight? = nil) -> Font {
+        let resolvedWeight = Self.resolve(weight, base: sansWeight)
+        if let sansFamily {
+            return .custom(sansFamily, size: step.size).weight(resolvedWeight)
+        }
+        return .system(size: step.size, weight: resolvedWeight)
     }
 
     public func mono(_ step: Step, weight: Font.Weight = .regular) -> Font {

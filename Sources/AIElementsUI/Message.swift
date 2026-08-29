@@ -1,6 +1,65 @@
 import ShadcnUI
 import SwiftUI
 
+/// Bubble insets for ``AIMessageContent``.
+///
+/// The standard preset preserves the existing user and attributed-assistant
+/// bubble geometry. Apply ``compact`` through ``View/aiMessageStyle(_:)`` when
+/// a denser transcript is appropriate.
+public struct AIMessageStyle: Equatable, Sendable {
+    public var bubbleHorizontalPadding: CGFloat
+    public var bubbleVerticalPadding: CGFloat
+
+    public init(
+        bubbleHorizontalPadding: CGFloat = 16,
+        bubbleVerticalPadding: CGFloat = 12
+    ) {
+        self.bubbleHorizontalPadding = bubbleHorizontalPadding
+        self.bubbleVerticalPadding = bubbleVerticalPadding
+    }
+
+    public static let standard = AIMessageStyle()
+
+    public static let compact = AIMessageStyle(bubbleVerticalPadding: 8)
+}
+
+private struct AIMessageStyleKey: EnvironmentKey {
+    static let defaultValue = AIMessageStyle.standard
+}
+
+private struct AIMessageTextSizeKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 15
+}
+
+private struct AIAssistantBubbleTintKey: EnvironmentKey {
+    static let defaultValue: Color? = nil
+}
+
+extension EnvironmentValues {
+    /// Bubble metrics inherited by ``AIMessageContent`` descendants.
+    public var aiMessageStyle: AIMessageStyle {
+        get { self[AIMessageStyleKey.self] }
+        set { self[AIMessageStyleKey.self] = newValue }
+    }
+
+    var aiMessageTextSize: CGFloat {
+        get { self[AIMessageTextSizeKey.self] }
+        set { self[AIMessageTextSizeKey.self] = newValue }
+    }
+
+    var aiAssistantBubbleTint: Color? {
+        get { self[AIAssistantBubbleTintKey.self] }
+        set { self[AIAssistantBubbleTintKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Applies message bubble metrics to this view hierarchy.
+    public func aiMessageStyle(_ style: AIMessageStyle) -> some View {
+        environment(\.aiMessageStyle, style)
+    }
+}
+
 /// Who a message came from. Mirrors `UIMessage["role"]`.
 public enum AIMessageRole: String, Sendable, CaseIterable {
     case user
@@ -39,6 +98,9 @@ public struct AIMessageContent<Content: View>: View {
     @Environment(\.aiMessageRole) private var role
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @Environment(\.aiMessageStyle) private var messageStyle
+    @Environment(\.aiMessageTextSize) private var messageTextSize
+    @Environment(\.aiAssistantBubbleTint) private var assistantBubbleTint
 
     public init(@ViewBuilder content: () -> Content) {
         self.content = content()
@@ -55,20 +117,23 @@ public struct AIMessageContent<Content: View>: View {
             VStack(alignment: .leading, spacing: Space.x2) {
                 content
             }
-            .font(theme.typography.sans(theme.typography.sm))
+            .font(.system(size: messageTextSize))
             .foregroundStyle(palette.foreground)
-            .applyIf(isUser) { view in
+            .applyIf(isUser || assistantBubbleTint != nil) { view in
                 view
-                    .padding(.horizontal, Space.x4)
-                    .padding(.vertical, Space.x3)
+                    .padding(.horizontal, messageStyle.bubbleHorizontalPadding)
+                    .padding(.vertical, messageStyle.bubbleVerticalPadding)
                     .background(
                         RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
-                            .fill(palette.secondary)
+                            .fill(isUser ? palette.secondary : (assistantBubbleTint ?? .clear))
                     )
             }
             .fixedSize(horizontal: false, vertical: true)
-            // The assistant column fills the row; the user bubble stays `w-fit`.
-            .applyIf(!isUser) { $0.frame(maxWidth: .infinity, alignment: .leading) }
+            // A coloured assistant reply hugs a readable column; un-attributed
+            // prose keeps AI Elements' traditional bare full-width treatment.
+            .applyIf(!isUser && assistantBubbleTint == nil) {
+                $0.frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             if !isUser { Spacer(minLength: 0) }
         }
@@ -110,7 +175,7 @@ public struct AIMessageAction: View {
     }
 
     public var body: some View {
-        ShadcnButton(icon: systemImage, variant: .ghost, size: .iconSM, action: action)
+        ShadcnButton(icon: systemImage, variant: .ghost, size: .iconXS, action: action)
             .shadcnTooltip(tooltip)
             .accessibilityLabel(tooltip)
     }
