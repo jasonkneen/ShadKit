@@ -28,6 +28,37 @@ public struct AIConversationStyle: Equatable, Sendable {
     public static let compact = AIConversationStyle(itemSpacing: 16)
 }
 
+/// What ``AIConversation`` watches to decide it should re-pin to the bottom.
+///
+/// The distinction matters for smoothness. Following the bottom used to start a
+/// fresh 0.2s `scrollTo` animation on every streamed token, and each one
+/// interrupted the one before it — the transcript stuttered rather than glided.
+/// A `counted` token separates "the in-flight answer grew by a token" (pin
+/// immediately, no animation) from "a turn landed" (worth animating).
+/// Not `Sendable`: the `opaque` case wraps a caller-supplied `AnyHashable`,
+/// which isn't. The type is only ever read on the main actor.
+public enum AIConversationToken: Hashable {
+    /// A caller-supplied value with no structure. Always animates, so existing
+    /// call sites keep the behaviour they had.
+    case opaque(AnyHashable)
+    /// Structured counts the conversation can reason about.
+    case counted(itemCount: Int, streamLength: Int, extra: Int)
+
+    public init(itemCount: Int, streamLength: Int = 0, extra: Int = 0) {
+        self = .counted(itemCount: itemCount, streamLength: streamLength, extra: extra)
+    }
+
+    /// Whether a move from `old` to `new` should glide or snap.
+    public static func animatesFollow(from old: Self, to new: Self) -> Bool {
+        guard
+            case let .counted(oldItems, _, oldExtra) = old,
+            case let .counted(newItems, _, newExtra) = new
+        else { return true }
+        // Only the live tail changed length: pin without animating.
+        return oldItems != newItems || oldExtra != newExtra
+    }
+}
+
 enum AIConversationPinningAction: Equatable, Sendable {
     case none
     case scrollToBottom
@@ -133,7 +164,7 @@ struct AIConversationPinningState: Equatable, Sendable {
 public struct AIConversation<Content: View>: View {
     private let content: Content
     /// Bumping this scrolls to the bottom, if pinned.
-    private let streamToken: AnyHashable
+    private let streamToken: AIConversationToken
     private let style: AIConversationStyle
 
     @State private var pinning = AIConversationPinningState()
@@ -145,7 +176,17 @@ public struct AIConversation<Content: View>: View {
         style: AIConversationStyle = .standard,
         @ViewBuilder content: () -> Content
     ) {
-        self.streamToken = streamToken
+        self.init(token: .opaque(streamToken), style: style, content: content)
+    }
+
+    /// Preferred by streaming transcripts: the structured token lets the
+    /// conversation pin without animating while only the live tail is growing.
+    public init(
+        token: AIConversationToken,
+        style: AIConversationStyle = .standard,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.streamToken = token
         self.style = style
         self.content = content()
     }
@@ -186,9 +227,12 @@ public struct AIConversation<Content: View>: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
-            .onChange(of: streamToken) { _, _ in
+            .onChange(of: streamToken) { previous, next in
                 let action = pinning.contentDidChange()
-                perform(action, with: proxy, animated: true)
+                perform(
+                    action,
+                    with: proxy,
+                    animated: AIConversationToken.animatesFollow(from: previous, to: next))
             }
             .animation(.easeOut(duration: 0.15), value: pinning.isFollowing)
         }

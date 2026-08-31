@@ -105,4 +105,27 @@ final class OverlayPlacementTests: XCTestCase {
         // And the top stays inside a typical ~600pt panel rather than at y≪0.
         XCTAssertGreaterThan(origin.y, 0)
     }
+
+    func testClampKeepsAKnownWidthPanelInsideTheHost() {
+        // Trailing-aligned 288pt panel whose trigger anchor ends 30pt past the
+        // visible host edge (a wider-than-visible anchor, or a trigger hugging
+        // the edge): the panel is pulled back so its right edge is the host's.
+        let raw = ShadcnOverlayPlacement.origin(
+            trigger: CGRect(x: 150, y: 10, width: 60, height: 20),
+            edge: .bottom, alignment: .trailing, gap: 4,
+            contentHeight: nil, contentWidth: 288)
+        XCTAssertEqual(raw.x, 210 - 288)
+        let clamped = ShadcnOverlayPlacement.clamped(
+            raw, contentWidth: 288, contentHeight: nil, in: CGSize(width: 400, height: 300))
+        XCTAssertEqual(clamped.x, 0, "never left of the host")
+        let overflowing = ShadcnOverlayPlacement.clamped(
+            CGPoint(x: 380, y: 34), contentWidth: 288, contentHeight: nil,
+            in: CGSize(width: 400, height: 300))
+        XCTAssertEqual(overflowing.x, 400 - 288, "never past the host's trailing edge")
+        XCTAssertEqual(overflowing.y, 34, "unknown height is left alone")
+        let unknown = ShadcnOverlayPlacement.clamped(
+            CGPoint(x: 380, y: 34), contentWidth: nil, contentHeight: nil,
+            in: CGSize(width: 400, height: 300))
+        XCTAssertEqual(unknown.x, 380, "unknown width is left alone")
+    }
 }

@@ -21,7 +21,7 @@ public struct AIResponse: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: Space.x3) {
-            ForEach(Array(AIMarkdownBlock.parse(markdown).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(AIMarkdownCache.blocks(for: markdown).enumerated()), id: \.offset) { _, block in
                 view(for: block)
             }
         }
@@ -98,15 +98,11 @@ public struct AIResponse: View {
 
     /// Renders inline markdown, falling back to the raw text if it doesn't
     /// parse — a half-streamed token should never blank the message.
+    ///
+    /// Cached: this runs once per block per body evaluation, and the transcript
+    /// re-evaluates every message body on every streamed token.
     private func inline(_ text: String) -> Text {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .inlineOnlyPreservingWhitespace
-        )
-        let source = AIMarkdownBlock.balancingEmphasis(text)
-        if let attributed = try? AttributedString(markdown: source, options: options) {
-            return Text(attributed)
-        }
-        return Text(source)
+        Text(AIMarkdownCache.inline(text))
     }
 }
 

@@ -253,6 +253,14 @@ public final class AIChat: ObservableObject {
     /// follow the bottom.
     public var streamToken: Int { messages.count &* 1000 &+ (messages.last?.parts.count ?? 0) }
 
+    /// Structured form; see ``AIConversationToken``.
+    public var conversationToken: AIConversationToken {
+        AIConversationToken(
+            itemCount: messages.count,
+            streamLength: messages.last?.text.count ?? 0,
+            extra: messages.last?.parts.count ?? 0)
+    }
+
     /// Appends a user turn and starts streaming the reply.
     ///
     /// - Parameter text: Defaults to `input`, which is then cleared.

@@ -173,7 +173,7 @@ public struct AIConversationView: View {
     }
 
     public var body: some View {
-        AIConversation(streamToken: chat.streamToken) {
+        AIConversation(token: chat.conversationToken) {
             if chat.messages.isEmpty, let emptyState {
                 emptyState
             }

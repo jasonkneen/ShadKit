@@ -19,6 +19,11 @@ struct ShadcnOverlayItem: Identifiable {
     /// Known width of the panel, used to place trailing and centered overlays.
     /// A nil width retains the alignment-guide fallback for custom callers.
     let contentWidth: CGFloat?
+    /// Whether the host's full-bleed catcher should dismiss this panel on an
+    /// outside click. Hover-triggered panels opt out: the catcher sits above
+    /// everything in z-order, so leaving it active would steal the pointer
+    /// hit-testing the trigger's own `.onHover` needs to detect hover-exit.
+    let dismissOnOutsideClick: Bool
     /// Called when the user clicks outside the panel.
     let onDismiss: () -> Void
     let content: AnyView
@@ -55,6 +60,7 @@ extension View {
         gap: CGFloat = 4,
         contentHeight: CGFloat? = nil,
         contentWidth: CGFloat? = nil,
+        dismissOnOutsideClick: Bool = true,
         onDismiss: @escaping () -> Void = {},
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -70,6 +76,7 @@ extension View {
                     gap: gap,
                     contentHeight: contentHeight,
                     contentWidth: contentWidth,
+                    dismissOnOutsideClick: dismissOnOutsideClick,
                     onDismiss: onDismiss,
                     content: AnyView(panel)
                 )
@@ -107,6 +114,27 @@ public enum ShadcnOverlayPlacement {
         }
         return CGPoint(x: x, y: y)
     }
+
+    /// Keeps a panel of known size inside the host. The root host clips at
+    /// its own bounds (a rounded pane), so an anchor that is wider than the
+    /// visible trigger — or a trigger hugging the host's edge — must not push
+    /// the panel off-screen where it is silently cut. Unknown dimensions are
+    /// left alone; the origin is never moved past the host's leading/top edge.
+    public static func clamped(
+        _ origin: CGPoint,
+        contentWidth: CGFloat?,
+        contentHeight: CGFloat?,
+        in host: CGSize
+    ) -> CGPoint {
+        var result = origin
+        if let contentWidth, host.width > 0 {
+            result.x = max(0, min(result.x, host.width - contentWidth))
+        }
+        if let contentHeight, host.height > 0 {
+            result.y = max(0, min(result.y, host.height - contentHeight))
+        }
+        return result
+    }
 }
 
 /// Draws whatever the subtree published, above everything else.
@@ -132,7 +160,11 @@ struct ShadcnOverlayHost: ViewModifier {
                 ZStack(alignment: .topLeading) {
                     // Full-host dismiss layer — not part of the panel's own
                     // size, so a 6000×6000 catcher can't inflate placement.
-                    if let first = items.first {
+                    // Skipped when every open item is hover-triggered: this
+                    // layer paints above everything, so leaving it active
+                    // would intercept the pointer a hover trigger needs to
+                    // see its own hover-exit.
+                    if let first = items.first(where: { $0.dismissOnOutsideClick }) {
                         Color.clear
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
@@ -141,13 +173,18 @@ struct ShadcnOverlayHost: ViewModifier {
 
                     ForEach(items) { item in
                         let frame = proxy[item.anchor]
-                        let origin = ShadcnOverlayPlacement.origin(
-                            trigger: frame,
-                            edge: item.edge,
-                            alignment: item.alignment,
-                            gap: item.gap,
+                        let origin = ShadcnOverlayPlacement.clamped(
+                            ShadcnOverlayPlacement.origin(
+                                trigger: frame,
+                                edge: item.edge,
+                                alignment: item.alignment,
+                                gap: item.gap,
+                                contentHeight: item.contentHeight,
+                                contentWidth: item.contentWidth
+                            ),
+                            contentWidth: item.contentWidth,
                             contentHeight: item.contentHeight,
-                            contentWidth: item.contentWidth
+                            in: proxy.size
                         )
 
                         // Built-in overlays provide their fixed panel width,

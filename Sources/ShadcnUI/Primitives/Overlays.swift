@@ -717,6 +717,95 @@ public struct ShadcnHoverCard<Trigger: View, Content: View>: View {
     }
 }
 
+/// A hover-triggered panel drawn unclipped at the root of the themed subtree
+/// (see `shadcnOverlay`), unlike `ShadcnHoverCard`'s plain `.overlay`, which
+/// an ancestor `.clipShape`/`.clipped()` — a rounded panel host, a scrollable
+/// pane — silently cuts off. The panel also stays open while the pointer is
+/// over *it*, not just the trigger, so its own content (buttons, links)
+/// stays reachable instead of vanishing the moment the pointer leaves the
+/// trigger on the way there.
+struct ShadcnHoverOverlayModifier<Panel: View>: ViewModifier {
+    let width: CGFloat
+    let edge: VerticalEdge
+    let alignment: HorizontalAlignment
+    let showDelay: Double
+    let hideDelay: Double
+    let panel: Panel
+
+    @State private var overlayID = UUID()
+    @State private var isHoveringTrigger = false
+    @State private var isHoveringPanel = false
+    @State private var isVisible = false
+
+    private var wantsVisible: Bool { isHoveringTrigger || isHoveringPanel }
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                isHoveringTrigger = hovering
+                scheduleVisibilityUpdate()
+            }
+            .shadcnOverlay(
+                id: overlayID,
+                isPresented: isVisible,
+                edge: edge,
+                alignment: alignment,
+                contentWidth: width,
+                // Hover panels dismiss by the pointer leaving, never by an
+                // outside click — see the flag's doc comment on
+                // `ShadcnOverlayItem` for why an active catcher would break
+                // the trigger's own hover-exit detection.
+                dismissOnOutsideClick: false,
+                onDismiss: { isVisible = false }
+            ) {
+                ShadcnPanel(padding: Space.x4) { panel }
+                    .frame(width: width)
+                    .fixedSize()
+                    .onHover { hovering in
+                        isHoveringPanel = hovering
+                        scheduleVisibilityUpdate()
+                    }
+            }
+    }
+
+    /// Every scheduled check re-reads live state instead of a captured
+    /// snapshot, so a trigger→panel handoff that lands inside `hideDelay`
+    /// cancels itself out: the pending hide fires, sees `wantsVisible` is
+    /// true again (the pointer landed on the panel), and no-ops.
+    private func scheduleVisibilityUpdate() {
+        if wantsVisible {
+            guard !isVisible else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + showDelay) {
+                if wantsVisible {
+                    withAnimation(.easeOut(duration: 0.12)) { isVisible = true }
+                }
+            }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + hideDelay) {
+                if !wantsVisible {
+                    withAnimation(.easeOut(duration: 0.1)) { isVisible = false }
+                }
+            }
+        }
+    }
+}
+
+extension View {
+    /// Attaches a `ShadcnHoverOverlayModifier` panel to this view.
+    public func shadcnHoverOverlay<Panel: View>(
+        width: CGFloat = 256,
+        edge: VerticalEdge = .bottom,
+        alignment: HorizontalAlignment = .leading,
+        showDelay: Double = 0.35,
+        hideDelay: Double = 0.15,
+        @ViewBuilder panel: () -> Panel
+    ) -> some View {
+        modifier(ShadcnHoverOverlayModifier(
+            width: width, edge: edge, alignment: alignment,
+            showDelay: showDelay, hideDelay: hideDelay, panel: panel()))
+    }
+}
+
 // MARK: - Dialog
 
 /// Radix `Dialog` — a `bg-black/50` scrim over a

@@ -148,6 +148,19 @@ public final class AIAssistantPanelModel: ObservableObject {
     @Published public var thinkingLabel = "Thinking"
     @Published public var streamingAuthor: String?
     @Published public var roster: [AIAssistantRosterEntry] = []
+    /// The highest context-window fraction among roster agents that have
+    /// reported one. Highest, not an average: the agent closest to its limit
+    /// is the one that actually forces a compaction, and burying that behind
+    /// an average would make the indicator read comfortably low right up
+    /// until a run fails. `nil` — indicator hidden entirely — until at least
+    /// one agent has taken a turn; never a fabricated 0%.
+    ///
+    /// Public so a host's own status accessory can tell whether the canonical
+    /// top-bar indicator is on screen and stand down instead of publishing a
+    /// second, differently-scoped percentage beside it.
+    public var aggregateContextFraction: Double? {
+        roster.compactMap(\.contextFraction).max()
+    }
     @Published public var queued: [AIAssistantQueuedItem] = []
     /// Tool calls for the turn in flight.
     ///
@@ -198,6 +211,11 @@ public final class AIAssistantPanelModel: ObservableObject {
     public var onAddAgent: ((String, String) -> Void)?
     /// Enables or disables one configured roster entry without removing its state.
     public var onToggleAgent: ((String) -> Void)?
+    /// Frees one roster agent's live provider context. The visible transcript
+    /// is untouched — only what the provider itself remembers resets.
+    public var onCompactContext: ((String) -> Void)?
+    /// Same as `onCompactContext`, applied to every roster agent at once.
+    public var onCompactAllContext: (() -> Void)?
     public var onStop: (() -> Void)?
     public var onNewChat: (() -> Void)?
     public var onSelectThread: ((String) -> Void)?
@@ -237,6 +255,18 @@ public final class AIAssistantPanelModel: ObservableObject {
             &+ queued.count
             &+ queued.filter(\.isRunning).count
             &+ tools.count
+    }
+
+    /// The same signal, split so the conversation can tell a growing live tail
+    /// from a structural change and only animate the latter.
+    public var conversationToken: AIConversationToken {
+        AIConversationToken(
+            itemCount: messages.count,
+            streamLength: streamingText?.count ?? 0,
+            extra: (isThinking ? 1 : 0)
+                &+ queued.count
+                &+ queued.filter(\.isRunning).count
+                &+ tools.count)
     }
 
     /// Folds a tool event into the live list. A result carries no name, so it
@@ -369,6 +399,19 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
                 .clipped()
                 .layoutPriority(1)
 
+            // A top-level `if let` here, not a computed property with its own
+            // internal branch: `HStack(spacing:)` allocates a spacing slot for
+            // every direct child expression whether or not it renders
+            // `EmptyView()`, but it does special-case a literal `if` in its
+            // own builder to contribute nothing when the branch is skipped —
+            // the same reason `newChatButton` below is written inline rather
+            // than through a `chrome.newChatOwner`-branching computed property.
+            if chrome.topBarRosterControl(rosterCount: model.roster.count) != .none,
+               let aggregate = aggregateContextFraction {
+                contextControl(aggregate)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+
             rosterControl
                 .fixedSize(horizontal: true, vertical: false)
 
@@ -474,6 +517,107 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
                     .fill(palette.isDark ? palette.input.opacity(0.3) : palette.background)
             )
             .shadcnBorder(palette.input, cornerRadius: theme.radius.md)
+    }
+
+    /// One number for "how close is this conversation to running out of
+    /// room", plus — on hover — the real per-agent breakdown it was built
+    /// from. Distinct from the roster menu's own per-row meters: this is the
+    /// thing visible without opening anything, so a multi-agent Chat has one
+    /// trustworthy answer instead of five different agents each showing their
+    /// own private number (or nothing, silently).
+    /// Takes the fraction as a parameter rather than re-deriving it: the
+    /// caller in `body` has already unwrapped it to decide whether to
+    /// contribute an `HStack` spacing slot at all (see the comment there),
+    /// and a second `if let` here would let the two disagree.
+    private func contextControl(_ aggregate: Double) -> some View {
+        HStack(spacing: Space.x1) {
+            AIContextGauge(fraction: aggregate)
+            Text(aggregate.formatted(.percent.precision(.fractionLength(0))))
+                .font(theme.typography.sans(theme.typography.xs))
+                .foregroundStyle(palette.mutedForeground)
+        }
+        .padding(.horizontal, Space.x2)
+        .frame(height: chrome.density == .compact ? 24 : 28)
+        .background(
+            RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
+                .fill(palette.isDark ? palette.input.opacity(0.3) : palette.background)
+        )
+        .shadcnBorder(palette.input, cornerRadius: theme.radius.md)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Context usage across agents")
+        .accessibilityValue(contextAccessibilityValue)
+        .shadcnHoverOverlay(width: 288, alignment: .trailing) {
+            contextPopoutContent
+        }
+    }
+
+    private var aggregateContextFraction: Double? {
+        model.aggregateContextFraction
+    }
+
+    private var contextAccessibilityValue: String {
+        let reporting = model.roster.filter { $0.contextFraction != nil }.count
+        let percent = Int((aggregateContextFraction ?? 0) * 100)
+        return "\(percent) percent, highest of \(reporting) of "
+            + "\(model.roster.count) agents reporting"
+    }
+
+    private var contextPopoutContent: some View {
+        VStack(alignment: .leading, spacing: Space.x1) {
+            HStack(spacing: Space.x2) {
+                ShadcnMenuLabel("Context by agent")
+                Spacer(minLength: Space.x2)
+                if model.onCompactAllContext != nil {
+                    ShadcnButton(
+                        "Compact all", systemImage: ShadcnIcon.refresh,
+                        variant: .ghost, size: .xs
+                    ) {
+                        model.onCompactAllContext?()
+                    }
+                    .accessibilityHint(
+                        "Frees every agent's live context; the transcript stays"
+                    )
+                }
+            }
+            .padding(.horizontal, Space.x2)
+            ForEach(model.roster) { agent in
+                contextPopoutRow(agent)
+            }
+        }
+    }
+
+    private func contextPopoutRow(_ agent: AIAssistantRosterEntry) -> some View {
+        HStack(spacing: Space.x2) {
+            Text("@\(agent.name)")
+                .font(theme.typography.sans(theme.typography.sm))
+                .lineLimit(1)
+            Spacer(minLength: Space.x2)
+            if let fraction = agent.contextFraction {
+                AIContextGauge(fraction: fraction)
+                Text(fraction.formatted(.percent.precision(.fractionLength(0))))
+                    .font(theme.typography.sans(theme.typography.xs))
+                    .foregroundStyle(palette.mutedForeground)
+                    .frame(minWidth: 34, alignment: .trailing)
+                if model.onCompactContext != nil {
+                    ShadcnButton(
+                        "Compact", systemImage: ShadcnIcon.refresh,
+                        variant: .ghost, size: .xs
+                    ) {
+                        model.onCompactContext?(agent.id)
+                    }
+                    .accessibilityHint(
+                        "Frees this agent's live context; the transcript stays"
+                    )
+                }
+            } else {
+                Text("No data yet")
+                    .font(theme.typography.sans(theme.typography.xs))
+                    .foregroundStyle(palette.mutedForeground)
+            }
+        }
+        .padding(.horizontal, Space.x2)
+        .padding(.vertical, Space.x1)
     }
 
     @ViewBuilder
@@ -810,7 +954,7 @@ public struct AIAssistantPanel: View {
             )
         } else {
             AIConversation(
-                streamToken: model.streamToken,
+                token: model.conversationToken,
                 style: conversationStyle
             ) {
                 ForEach(model.messages) { message in
