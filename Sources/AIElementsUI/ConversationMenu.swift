@@ -16,6 +16,8 @@ struct AIConversationMenu: NSViewRepresentable {
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @Environment(\.shadcnSurfaceOpacity) private var surfaceOpacity
+    @Environment(\.shadcnGlassEnabled) private var glassEnabled
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -28,6 +30,8 @@ struct AIConversationMenu: NSViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.palette = palette
         context.coordinator.theme = theme
+        context.coordinator.surfaceOpacity = surfaceOpacity
+        context.coordinator.glassEnabled = glassEnabled
         context.coordinator.updateTitle(on: button)
         return button
     }
@@ -36,6 +40,8 @@ struct AIConversationMenu: NSViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.palette = palette
         context.coordinator.theme = theme
+        context.coordinator.surfaceOpacity = surfaceOpacity
+        context.coordinator.glassEnabled = glassEnabled
         button.font = .systemFont(
             ofSize: compact ? 11 : 13, weight: .medium)
         context.coordinator.updateTitle(on: button)
@@ -46,6 +52,8 @@ struct AIConversationMenu: NSViewRepresentable {
         var parent: AIConversationMenu?
         var palette: ShadcnPalette = ShadcnTheme.default.palette(for: .dark)
         var theme: ShadcnTheme = .default
+        var surfaceOpacity: Double = 1
+        var glassEnabled: Bool = true
         var popover: NSPopover?
 
         var activeTitle: String {
@@ -82,13 +90,17 @@ struct AIConversationMenu: NSViewRepresentable {
             popover.animates = false
             popover.delegate = self
             popover.contentSize = NSSize(width: 360, height: 440)
+            popover.appearance = NSAppearance(
+                named: palette.isDark ? .vibrantDark : .vibrantLight)
             popover.contentViewController = hostingController()
             self.popover = popover
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+            ShadcnWindowTransparency.apply(to: popover)
         }
 
         private func hostingController() -> NSViewController {
             let parent = self.parent
+            let glass = glassEnabled
             let root = AIConversationPickerView(
                 threads: parent?.threads ?? [],
                 activeId: parent?.activeId,
@@ -106,13 +118,33 @@ struct AIConversationMenu: NSViewRepresentable {
                     self?.popover?.close()
                 }
             )
-            .shadcnTheme(theme)
+            .shadcnTheme(theme, surfaceOpacity: surfaceOpacity, glass: glass)
             .environment(\.shadcnPalette, palette)
+            .environment(\.shadcnHostProvidesGlass, glass)
             .preferredColorScheme(palette.isDark ? .dark : .light)
             let host = NSHostingController(rootView: AnyView(root))
             host.sizingOptions = []
             host.view.frame = NSRect(x: 0, y: 0, width: 360, height: 440)
-            return host
+            host.view.wantsLayer = true
+            host.view.layer?.backgroundColor = NSColor.clear.cgColor
+            guard glass else { return host }
+
+            let wrapper = NSViewController()
+            wrapper.view = ShadcnWindowTransparency.wrap(
+                host.view,
+                frame: host.view.frame,
+                cornerRadius: 12,
+                glass: true)
+            wrapper.preferredContentSize = NSSize(width: 360, height: 440)
+            return wrapper
+        }
+
+        func popoverWillShow(_ notification: Notification) {
+            ShadcnWindowTransparency.apply(to: popover)
+        }
+
+        func popoverDidShow(_ notification: Notification) {
+            ShadcnWindowTransparency.apply(to: popover)
         }
 
         func popoverDidClose(_ notification: Notification) {
@@ -121,13 +153,29 @@ struct AIConversationMenu: NSViewRepresentable {
     }
 }
 
-struct AIConversationPickerView: View {
+public struct AIConversationPickerView: View {
     var threads: [AIConversationEntry]
     var activeId: String?
     var onSelect: (String) -> Void
     var onNew: () -> Void
     var onArchive: ((String) -> Void)?
     var onFork: ((String) -> Void)?
+
+    public init(
+        threads: [AIConversationEntry],
+        activeId: String?,
+        onSelect: @escaping (String) -> Void,
+        onNew: @escaping () -> Void,
+        onArchive: ((String) -> Void)? = nil,
+        onFork: ((String) -> Void)? = nil
+    ) {
+        self.threads = threads
+        self.activeId = activeId
+        self.onSelect = onSelect
+        self.onNew = onNew
+        self.onArchive = onArchive
+        self.onFork = onFork
+    }
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -147,7 +195,7 @@ struct AIConversationPickerView: View {
         return full.count > rows.count
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: Space.x2) {
             searchField
             HStack(spacing: Space.x2) {
@@ -169,7 +217,10 @@ struct AIConversationPickerView: View {
         }
         .padding(Space.x3)
         .frame(width: 360, height: 440, alignment: .top)
-        .background(palette.popover)
+        .background(
+            ShadcnTranslucentFill(color: palette.popover, cornerRadius: theme.radius.lg)
+        )
+        .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
     }
 
     private var searchField: some View {

@@ -153,6 +153,8 @@ struct ShadcnOverlayHost: ViewModifier {
     let theme: ShadcnTheme
     let palette: ShadcnPalette
     let colorScheme: ColorScheme
+    var surfaceOpacity: Double = 1
+    var glassEnabled: Bool = true
 
     func body(content: Content) -> some View {
         content.overlayPreferenceValue(ShadcnOverlayKey.self) { items in
@@ -194,6 +196,8 @@ struct ShadcnOverlayHost: ViewModifier {
                         item.content
                             .environment(\.shadcnTheme, theme)
                             .environment(\.shadcnPalette, palette)
+                            .environment(\.shadcnSurfaceOpacity, surfaceOpacity)
+                            .environment(\.shadcnGlassEnabled, glassEnabled)
                             .environment(\.colorScheme, colorScheme)
                             .fixedSize()
                             // Preserve alignment for custom overlays that do

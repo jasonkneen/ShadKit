@@ -46,9 +46,9 @@ public struct ShadcnTextField: View {
         .padding(.horizontal, Space.x3)
         .frame(height: 36)
         .background(
-            RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                // dark:bg-input/30
-                .fill(palette.isDark ? palette.input.opacity(0.3) : Color.clear)
+            ShadcnTranslucentFill(
+                color: palette.isDark ? palette.input : palette.background,
+                cornerRadius: theme.radius.md)
         )
         .shadcnBorder(
             isFocused ? palette.ring : palette.input,

@@ -1,5 +1,6 @@
 import AIElementsGallery
 import AppKit
+import ShadcnUI
 import SwiftUI
 
 /// Standalone host for the gallery, so the component set can be eyeballed
@@ -18,9 +19,8 @@ final class DemoAppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "ShadKit"
-        window.titlebarAppearsTransparent = true
-        // `ShadKitDemo --section aiTemplates --scheme dark` opens straight
-        // onto a page, which is what the screenshot pass drives.
+        // `ShadKitDemo --section glass --scheme dark --opacity 0.45` opens
+        // straight onto the glass page, which is what the screenshot pass drives.
         let arguments = CommandLine.arguments
         func value(for flag: String) -> String? {
             guard let index = arguments.firstIndex(of: flag),
@@ -30,22 +30,26 @@ final class DemoAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let section = value(for: "--section").flatMap(GallerySection.init(rawValue:))
-            ?? .aiConversation
+            ?? .glass
         let scheme: ColorScheme? = switch value(for: "--scheme") {
         case "dark": .dark
         case "light": .light
-        default: nil
+        default: .dark
         }
+        let opacity = value(for: "--opacity").flatMap(Double.init).map { min(max($0, 0), 1) }
+            ?? 0.45
 
-        // Keep AppKit's appearance in step with the forced scheme, so
-        // system-drawn chrome (titlebar, scrollers, selection) matches the
-        // palette rather than following the OS setting.
         if let scheme {
-            window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+            window.appearance = NSAppearance(
+                named: scheme == .dark ? .vibrantDark : .vibrantLight)
         }
 
-        window.contentView = NSHostingView(
-            rootView: ShadcnAIGallery(initialSection: section, scheme: scheme)
+        ShadcnGalleryWindow.install(
+            ShadcnAIGallery(
+                initialSection: section,
+                scheme: scheme,
+                surfaceOpacity: opacity),
+            in: window
         )
         window.center()
         window.makeKeyAndOrderFront(nil)

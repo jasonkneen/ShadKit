@@ -32,20 +32,28 @@ public final class ShadcnHostingView<Content: View>: NSView {
     private var theme: ShadcnTheme
     private var colorScheme: ColorScheme?
     private var paintsBackground: Bool
+    private var surfaceOpacity: Double
+    private var glassEnabled: Bool
 
     public init(
         theme: ShadcnTheme = .default,
         colorScheme: ColorScheme? = nil,
         paintsBackground: Bool = false,
+        surfaceOpacity: Double = 1,
+        glass: Bool = true,
         @ViewBuilder content: () -> Content
     ) {
         self.theme = theme
         self.colorScheme = colorScheme
         self.paintsBackground = paintsBackground
+        self.surfaceOpacity = Self.clampedOpacity(surfaceOpacity)
+        self.glassEnabled = glass
         hosting = NSHostingView(
             rootView: Self.themedRoot(
                 content(), theme: theme, colorScheme: colorScheme,
-                paintsBackground: paintsBackground))
+                paintsBackground: paintsBackground,
+                surfaceOpacity: Self.clampedOpacity(surfaceOpacity),
+                glassEnabled: glass))
         super.init(frame: .zero)
 
         // The fix for (1): without this the hosting view's intrinsic size
@@ -56,6 +64,10 @@ public final class ShadcnHostingView<Content: View>: NSView {
         // makes bottom-of-panel selects look broken even when placement is right.
         hosting.clipsToBounds = false
         clipsToBounds = false
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
         addSubview(hosting)
         NSLayoutConstraint.activate([
             hosting.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -77,7 +89,9 @@ public final class ShadcnHostingView<Content: View>: NSView {
     public func update(@ViewBuilder content: () -> Content) {
         hosting.rootView = Self.themedRoot(
             content(), theme: theme, colorScheme: colorScheme,
-            paintsBackground: paintsBackground)
+            paintsBackground: paintsBackground,
+            surfaceOpacity: surfaceOpacity,
+            glassEnabled: glassEnabled)
     }
 
     /// Updates the theme and content together. Embedded panels use this when a
@@ -86,15 +100,23 @@ public final class ShadcnHostingView<Content: View>: NSView {
         theme: ShadcnTheme,
         colorScheme: ColorScheme? = nil,
         paintsBackground: Bool? = nil,
+        surfaceOpacity: Double? = nil,
+        glass: Bool? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.theme = theme
         let resolvedColorScheme = colorScheme ?? self.colorScheme
         self.colorScheme = resolvedColorScheme
         if let paintsBackground { self.paintsBackground = paintsBackground }
+        if let surfaceOpacity {
+            self.surfaceOpacity = Self.clampedOpacity(surfaceOpacity)
+        }
+        if let glass { self.glassEnabled = glass }
         hosting.rootView = Self.themedRoot(
             content(), theme: theme, colorScheme: resolvedColorScheme,
-            paintsBackground: self.paintsBackground)
+            paintsBackground: self.paintsBackground,
+            surfaceOpacity: self.surfaceOpacity,
+            glassEnabled: self.glassEnabled)
         if let resolvedColorScheme {
             appearance = NSAppearance(
                 named: resolvedColorScheme == .dark ? .darkAqua : .aqua)
@@ -105,11 +127,13 @@ public final class ShadcnHostingView<Content: View>: NSView {
         _ content: V,
         theme: ShadcnTheme,
         colorScheme: ColorScheme?,
-        paintsBackground: Bool
+        paintsBackground: Bool,
+        surfaceOpacity: Double,
+        glassEnabled: Bool
     ) -> AnyView {
         var root = paintsBackground
-            ? AnyView(content.shadcnSurface(theme))
-            : AnyView(content.shadcnTheme(theme))
+            ? AnyView(content.shadcnSurface(theme, opacity: surfaceOpacity, glass: glassEnabled))
+            : AnyView(content.shadcnTheme(theme, surfaceOpacity: surfaceOpacity, glass: glassEnabled))
         // Appearance must wrap the theme root so `ShadcnRoot` itself reads the
         // requested scheme while resolving its palette.
         if let colorScheme {
@@ -117,6 +141,13 @@ public final class ShadcnHostingView<Content: View>: NSView {
         }
         return root
     }
+
+    private static func clampedOpacity(_ value: Double) -> Double {
+        min(max(value, 0), 1)
+    }
+
+    var surfaceOpacityForTesting: Double { surfaceOpacity }
+    var glassEnabledForTesting: Bool { glassEnabled }
 
     /// A hosting view never draws its own background; the SwiftUI content owns
     /// the surface, so the AppKit layer stays transparent.

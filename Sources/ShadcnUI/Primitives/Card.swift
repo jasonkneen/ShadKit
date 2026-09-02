@@ -21,8 +21,8 @@ public struct ShadcnCard<Content: View>: View {
         .padding(.vertical, Space.x6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: theme.radius.xl, style: .continuous)
-                .fill(palette.card)
+            ShadcnTranslucentFill(
+                color: palette.card, cornerRadius: theme.radius.xl)
         )
         .shadcnBorder(palette.border, cornerRadius: theme.radius.xl)
         .foregroundStyle(palette.cardForeground)

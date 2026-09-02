@@ -20,12 +20,14 @@ let package = Package(
         // `swift run ShadKitDemo` opens the gallery in a window.
         .executableTarget(
             name: "ShadKitDemo",
-            dependencies: ["AIElementsGallery"]
+            dependencies: ["AIElementsGallery", "ShadcnUI"]
         ),
         .target(name: "ShadcnUI"),
         .target(name: "AIElementsUI", dependencies: ["ShadcnUI"]),
         .target(name: "CanvasUI", dependencies: ["ShadcnUI"]),
         .target(name: "AIElementsGallery", dependencies: ["ShadcnUI", "AIElementsUI", "CanvasUI"]),
-        .testTarget(name: "ShadKitTests", dependencies: ["ShadcnUI", "AIElementsUI", "CanvasUI"]),
+        .testTarget(
+            name: "ShadKitTests",
+            dependencies: ["ShadcnUI", "AIElementsUI", "CanvasUI", "AIElementsGallery"]),
     ]
 )

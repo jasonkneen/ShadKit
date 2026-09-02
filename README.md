@@ -108,8 +108,14 @@ Or run it standalone:
 
 ```
 swift run ShadKitDemo
+swift run ShadKitDemo --section glass --scheme dark --opacity 0.45
 swift run ShadKitDemo --section aiTemplates --scheme dark
 ```
+
+`--section glass` is the transparency check: selects, menus, cards, dialogs and
+the conversation picker sit on a wallpaper. Toggle **Glass** in the sidebar —
+on frosts like a macOS menu, off is a flat fill. **Opacity** is independent.
+Default opacity in the standalone demo is `0.45`.
 
 ## Notes and limits
 

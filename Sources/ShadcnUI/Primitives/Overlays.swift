@@ -22,8 +22,7 @@ public struct ShadcnPanel<Content: View>: View {
         }
         .padding(padding)
         .background(
-            RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                .fill(palette.popover)
+            ShadcnTranslucentFill(color: palette.popover, cornerRadius: theme.radius.md)
         )
         .shadcnBorder(palette.border, cornerRadius: theme.radius.md)
         .foregroundStyle(palette.popoverForeground)
@@ -542,8 +541,9 @@ public struct ShadcnSelect<Value: Hashable>: View {
                     .frame(width: width)
                     .frame(minWidth: triggerMinWidth)
                     .background(
-                        RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                            .fill(palette.isDark ? palette.input.opacity(0.3) : palette.background)
+                        ShadcnTranslucentFill(
+                            color: palette.isDark ? palette.input : palette.background,
+                            cornerRadius: theme.radius.md)
                     )
                     .shadcnBorder(
                         isOpen ? palette.ring : palette.input,
@@ -835,8 +835,10 @@ struct ShadcnDialogModifier<DialogContent: View>: ViewModifier {
                         .padding(Space.x6)
                         .frame(width: width)
                         .background(
-                            RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
-                                .fill(palette.background)
+                            ShadcnTranslucentFill(
+                                color: palette.background,
+                                cornerRadius: theme.radius.lg,
+                                material: .regularMaterial)
                         )
                         .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
                         .shadcnShadow(.lg)

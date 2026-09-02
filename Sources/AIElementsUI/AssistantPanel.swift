@@ -760,6 +760,7 @@ public struct AIAssistantPanel: View {
     let chrome: AIAssistantPanelChrome
 
     @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnSurfaceOpacity) private var surfaceOpacity
     @Environment(\.shadcnTheme) private var theme
 
     public init(model: AIAssistantPanelModel, showsHeader: Bool = true) {
@@ -851,7 +852,7 @@ public struct AIAssistantPanel: View {
                 .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(palette.background)
+        .background(palette.background.opacity(surfaceOpacity))
         .onAppear(perform: applyComposerQAHooks)
     }
 

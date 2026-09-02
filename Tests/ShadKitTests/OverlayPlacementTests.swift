@@ -11,9 +11,26 @@ final class OverlayPlacementTests: XCTestCase {
         let host = ShadcnOverlayHost(
             theme: theme,
             palette: theme.palette(for: .dark),
-            colorScheme: .dark)
+            colorScheme: .dark,
+            surfaceOpacity: 0.4)
         XCTAssertTrue(host.palette.isDark)
         XCTAssertEqual(host.colorScheme, .dark)
+        XCTAssertEqual(host.surfaceOpacity, 0.4, accuracy: 0.001)
+        XCTAssertTrue(host.glassEnabled)
+    }
+
+    func testTranslucentFillUsesMaterialOnlyWhenGlassIsOn() {
+        XCTAssertTrue(ShadcnSurfaceFill.usesMaterial(glass: true))
+        XCTAssertFalse(ShadcnSurfaceFill.usesMaterial(glass: false))
+        // Glass off: opacity is a flat alpha, no frost.
+        XCTAssertEqual(ShadcnSurfaceFill.tintOpacity(1, glass: false), 1, accuracy: 0.001)
+        XCTAssertEqual(ShadcnSurfaceFill.tintOpacity(0.5, glass: false), 0.5, accuracy: 0.001)
+        // Glass on: light wash over material, even at full pane opacity.
+        XCTAssertEqual(
+            ShadcnSurfaceFill.tintOpacity(1, glass: true),
+            ShadcnSurfaceFill.maximumTranslucentTint,
+            accuracy: 0.001)
+        XCTAssertEqual(ShadcnSurfaceFill.tintOpacity(0.1, glass: true), 0.04, accuracy: 0.001)
     }
 
     func testBottomEdgeAnchorsJustBelowTheTrigger() {

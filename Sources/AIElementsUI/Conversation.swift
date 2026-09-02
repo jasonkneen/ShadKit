@@ -168,6 +168,10 @@ public struct AIConversation<Content: View>: View {
     private let style: AIConversationStyle
 
     @State private var pinning = AIConversationPinningState()
+    /// Last geometry acted on. Preference changes fire repeatedly with the
+    /// same values during a resize, and each one re-ran the bottom pin, which
+    /// forces the lazy stack to measure rows again.
+    @State private var lastHandledGeometry: AIConversationGeometry?
 
     private static var bottomAnchorID: String { "ai-conversation-bottom" }
 
@@ -196,7 +200,11 @@ public struct AIConversation<Content: View>: View {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        VStack(alignment: .leading, spacing: style.itemSpacing) {
+                        // Lazy: a plain VStack lays out every message on every
+                        // layout pass, so resizing a pane beside a long
+                        // transcript re-rendered the whole conversation —
+                        // markdown, code blocks and tool cards — each frame.
+                        LazyVStack(alignment: .leading, spacing: style.itemSpacing) {
                             content
                         }
                         .padding(.horizontal, style.horizontalPadding)
@@ -214,6 +222,8 @@ public struct AIConversation<Content: View>: View {
                 .background(viewportGeometryDetector)
                 .onPreferenceChange(AIConversationGeometryKey.self) { value in
                     guard let geometry = value.geometry else { return }
+                    guard geometry != lastHandledGeometry else { return }
+                    lastHandledGeometry = geometry
                     let action = pinning.geometryDidChange(
                         geometry,
                         bottomTolerance: style.bottomTolerance

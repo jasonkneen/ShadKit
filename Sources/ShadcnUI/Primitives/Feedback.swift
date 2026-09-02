@@ -136,8 +136,8 @@ public struct ShadcnAlert<Content: View>: View {
         .padding(.vertical, Space.x3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
-                .fill(palette.card)
+            ShadcnTranslucentFill(
+                color: palette.card, cornerRadius: theme.radius.lg)
         )
         .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
         .environment(\.shadcnAlertVariant, variant)
