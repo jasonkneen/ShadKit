@@ -499,6 +499,12 @@ struct ContentDemo: View {
             .frame(maxWidth: 620)
         }
 
+        GalleryBlock("Response — custom message text size (aiMessageTextSize)") {
+            AIResponse("Rendered at 20pt via `.environment(\\.aiMessageTextSize, 20)`.")
+                .environment(\.aiMessageTextSize, 20)
+                .frame(maxWidth: 620)
+        }
+
         GalleryBlock("Response — tables, nested lists, palette code colours") {
             AIResponse(
                 """

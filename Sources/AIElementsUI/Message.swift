@@ -42,7 +42,11 @@ extension EnvironmentValues {
         set { self[AIMessageStyleKey.self] = newValue }
     }
 
-    var aiMessageTextSize: CGFloat {
+    /// The message-body point size `AIResponse` and `AIMessageContent`
+    /// render at. `AIAssistantPanel` sets this from its own model; a caller
+    /// using `AIResponse` outside `AIAssistantPanel` can set it directly to
+    /// get the same configured size instead of the 15pt default.
+    public var aiMessageTextSize: CGFloat {
         get { self[AIMessageTextSizeKey.self] }
         set { self[AIMessageTextSizeKey.self] = newValue }
     }
