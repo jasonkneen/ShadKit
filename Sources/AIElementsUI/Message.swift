@@ -101,6 +101,14 @@ public enum AISystemEventKind: String, Sendable, CaseIterable {
     case modeYolo
     case missingKey
     case status
+    /// A provider or tool failure — rendered with `palette.destructive`
+    /// instead of the neutral `mutedForeground` every other kind uses, so it
+    /// reads distinctly from an ordinary status line.
+    case failure
+    /// A soft caution, short of a failure. `ShadcnPalette` has no amber
+    /// "warning" token, so this uses `palette.destructive` at a reduced
+    /// opacity rather than reusing the full failure tint.
+    case warning
 
     var systemImage: String {
         switch self {
@@ -112,6 +120,17 @@ public enum AISystemEventKind: String, Sendable, CaseIterable {
         case .modeYolo: ShadcnIcon.sparkles
         case .missingKey: ShadcnIcon.alertTriangle
         case .status: ShadcnIcon.info
+        case .failure: ShadcnIcon.xCircle
+        case .warning: ShadcnIcon.alertTriangle
+        }
+    }
+
+    /// `nil` keeps the shared `mutedForeground` every other kind renders in.
+    func tint(_ palette: ShadcnPalette) -> Color? {
+        switch self {
+        case .failure: palette.destructive
+        case .warning: palette.destructive.opacity(0.7)
+        default: nil
         }
     }
 }
@@ -139,10 +158,10 @@ public struct AISystemEvent: View {
 
             HStack(spacing: Space.x1_5) {
                 ShadcnIconView(kind.systemImage, size: 12)
-                    .foregroundStyle(palette.mutedForeground)
+                    .foregroundStyle(kind.tint(palette) ?? palette.mutedForeground)
                 Text(text)
                     .font(theme.typography.sans(theme.typography.xs))
-                    .foregroundStyle(palette.mutedForeground)
+                    .foregroundStyle(kind.tint(palette) ?? palette.mutedForeground)
             }
             .fixedSize(horizontal: true, vertical: false)
 

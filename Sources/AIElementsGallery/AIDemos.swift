@@ -104,6 +104,8 @@ struct ConversationDemo: View {
                 AISystemEvent("Switched to Claude Opus 5", kind: .seatModel)
                 AISystemEvent("YOLO mode enabled", kind: .modeYolo)
                 AISystemEvent("No API key configured for Grok", kind: .missingKey)
+                AISystemEvent("Provider request failed: 503 Service Unavailable", kind: .failure)
+                AISystemEvent("Context window is 90% full", kind: .warning)
             }
             .frame(maxWidth: 620)
         }
