@@ -353,13 +353,31 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
     @Binding private var isPresented: Bool
     private let minWidth: CGFloat
     private let edge: VerticalEdge
-    /// Height of the menu panel, for placing it above the trigger.
+    /// Height of the menu panel, for placing it above the trigger. Optional
+    /// on the AppKit path (U19-fix): the floating panel measures its own
+    /// content, so this is only needed as an override, or by the iOS
+    /// in-tree fallback below, which cannot measure ahead of layout.
     private let contentHeight: CGFloat?
     private let alignment: HorizontalAlignment
     private let trigger: Trigger
     private let content: Content
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+    #if canImport(AppKit)
+    @Environment(\.shadcnSurfaceOpacity) private var surfaceOpacity
+    @Environment(\.shadcnGlassEnabled) private var glassEnabled
+    @Environment(\.colorScheme) private var colorScheme
+    /// A borderless `NSPanel`, positioned in real screen space — see
+    /// `ShadcnFloatingPanelController`'s doc comment for why an in-tree
+    /// SwiftUI overlay (the pre-U19-fix implementation, still used on iOS
+    /// below) can't be trusted to escape an `NSHostingView` pane smaller
+    /// than the menu.
+    @State private var panelController = ShadcnFloatingPanelController()
+    #else
     /// Stable while this control lives — never regenerated on layout.
     @State private var overlayID = UUID()
+    #endif
 
     public init(
         isPresented: Binding<Bool>,
@@ -379,6 +397,40 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
         self.content = content()
     }
 
+    #if canImport(AppKit)
+    public var body: some View {
+        trigger
+            .background(ShadcnFloatingAnchor(controller: panelController))
+            .onChange(of: isPresented) { _, presented in
+                if presented { showPanel() } else { panelController.close() }
+            }
+            // `.onChange` only fires on a *change* — a caller that starts
+            // already presented (`startsOpen: true`, as `ShadcnSelect` wires
+            // through) would never trigger it.
+            .onAppear {
+                if isPresented { showPanel() }
+            }
+            .onDisappear { panelController.close() }
+    }
+
+    private func showPanel() {
+        panelController.show(
+            edge: edge, alignment: alignment,
+            contentWidth: minWidth, contentHeight: contentHeight,
+            makesKey: true,
+            onDismiss: { isPresented = false }
+        ) {
+            ShadcnPanel { content }
+                .frame(width: minWidth)
+                .fixedSize()
+                .environment(\.shadcnTheme, theme)
+                .environment(\.shadcnPalette, palette)
+                .environment(\.shadcnSurfaceOpacity, surfaceOpacity)
+                .environment(\.shadcnGlassEnabled, glassEnabled)
+                .environment(\.colorScheme, colorScheme)
+        }
+    }
+    #else
     public var body: some View {
         trigger
             .shadcnOverlay(
@@ -399,6 +451,7 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
                 .fixedSize()
             }
     }
+    #endif
 }
 
 // MARK: - Select
