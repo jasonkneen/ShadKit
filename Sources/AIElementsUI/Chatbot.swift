@@ -10,19 +10,39 @@ public struct AIMessageView: View {
     private let onCopy: ((UIMessage) -> Void)?
     private let onRegenerate: ((UIMessage) -> Void)?
     private let usesAgentBubble: Bool
+    /// A leading avatar, drawn to the side of the bubble. Type-erased so this
+    /// stays a concrete, non-generic `View` for source compatibility.
+    private let avatar: (() -> AnyView)?
+    /// The message this one is replying to, shown as a quoted preview above
+    /// the content.
+    private let replyTo: UIMessage?
+    /// A short usage/cost string (e.g. token count), shown as a badge next to
+    /// the timestamp.
+    private let usageBadge: String?
+    /// Extra actions appended after Copy/Regenerate (e.g. fork, hand off).
+    private let accessoryActions: (() -> AnyView)?
 
     @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
 
     public init(
         message: UIMessage,
         onCopy: ((UIMessage) -> Void)? = nil,
         onRegenerate: ((UIMessage) -> Void)? = nil,
-        usesAgentBubble: Bool = false
+        usesAgentBubble: Bool = false,
+        avatar: (() -> AnyView)? = nil,
+        replyTo: UIMessage? = nil,
+        usageBadge: String? = nil,
+        accessoryActions: (() -> AnyView)? = nil
     ) {
         self.message = message
         self.onCopy = onCopy
         self.onRegenerate = onRegenerate
         self.usesAgentBubble = usesAgentBubble
+        self.avatar = avatar
+        self.replyTo = replyTo
+        self.usageBadge = usageBadge
+        self.accessoryActions = accessoryActions
     }
 
     private var sources: [AISource] {
@@ -40,7 +60,21 @@ public struct AIMessageView: View {
     }
 
     public var body: some View {
+        HStack(alignment: .top, spacing: Space.x2) {
+            if let avatar {
+                avatar()
+            }
+            bubble
+        }
+        .environment(\.aiAssistantBubbleTint, agentBubbleTint)
+    }
+
+    @ViewBuilder
+    private var bubble: some View {
         AIMessage(message.role) {
+            if let replyTo {
+                replyPreview(replyTo)
+            }
             if message.role == .assistant, let author = message.author {
                 Text(author)
                     .font(.caption.weight(.semibold))
@@ -90,6 +124,9 @@ public struct AIMessageView: View {
             if message.role != .system {
                 HStack(spacing: Space.x1) {
                     AIRelativeTimestamp(date: message.createdAt)
+                    if let usageBadge {
+                        ShadcnBadge(usageBadge, variant: .outline)
+                    }
                     if message.role == .assistant {
                         AIMessageActions {
                             if let onCopy {
@@ -105,6 +142,7 @@ public struct AIMessageView: View {
                                     onRegenerate(message)
                                 }
                             }
+                            accessoryActions?()
                         }
                     }
                 }
@@ -113,7 +151,29 @@ public struct AIMessageView: View {
                     alignment: message.role == .user ? .trailing : .leading)
             }
         }
-        .environment(\.aiAssistantBubbleTint, agentBubbleTint)
+    }
+
+    private func replyPreview(_ replyTo: UIMessage) -> some View {
+        HStack(spacing: Space.x1_5) {
+            Rectangle()
+                .fill(palette.mutedForeground.opacity(0.4))
+                .frame(width: 2)
+            VStack(alignment: .leading, spacing: 1) {
+                if let author = replyTo.author {
+                    Text(author)
+                        .font(theme.typography.sans(theme.typography.xs, weight: .semibold))
+                        .foregroundStyle(palette.mutedForeground)
+                }
+                Text(replyTo.text)
+                    .font(theme.typography.sans(theme.typography.xs))
+                    .foregroundStyle(palette.mutedForeground)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, Space.x1)
+        .padding(.horizontal, Space.x2)
+        .background(palette.muted.opacity(0.35))
+        .clipShape(RoundedRectangle(cornerRadius: theme.radius.sm, style: .continuous))
     }
 
     private var agentBubbleTint: Color? {

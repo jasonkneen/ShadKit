@@ -50,6 +50,29 @@ struct ConversationDemo: View {
             }
         }
 
+        GalleryBlock("Message view — avatar, reply, usage, accessory") {
+            AIMessageView(
+                message: UIMessage(
+                    role: .assistant,
+                    text: "Renamed the branch and pushed.",
+                    author: "Claude"),
+                onCopy: { _ in },
+                avatar: {
+                    AnyView(
+                        Circle().fill(Color.accentColor)
+                            .frame(width: 24, height: 24)
+                    )
+                },
+                replyTo: UIMessage(role: .user, text: "Can you rename the feature branch?"),
+                usageBadge: "1.2k tokens",
+                accessoryActions: {
+                    AnyView(
+                        AIMessageAction(systemImage: ShadcnIcon.gitBranch, tooltip: "Fork") {}
+                    )
+                }
+            )
+        }
+
         GalleryBlock("Branch selector") {
             AIMessageBranchSelector(index: $branch, total: 3)
         }
