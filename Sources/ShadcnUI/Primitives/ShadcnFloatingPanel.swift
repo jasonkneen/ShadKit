@@ -149,6 +149,10 @@ public final class ShadcnFloatingPanelController: NSObject {
         panel.orderFront(nil)
         if makesKey {
             previousKeyWindow = NSApp.keyWindow
+            // Keyboard events go to the active app. A trigger click already
+            // activates it in practice; make it explicit so a panel opened any
+            // other way can still take typing.
+            if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
             panel.makeKey()
             // SwiftUI focus (`@FocusState`) only lands once the hosting view
             // is the panel's first responder; `makeKey` alone leaves it nil.
@@ -209,6 +213,10 @@ public final class ShadcnFloatingPanelController: NSObject {
         panel.orderFront(nil)
         if makesKey {
             previousKeyWindow = NSApp.keyWindow
+            // Keyboard events go to the active app. A trigger click already
+            // activates it in practice; make it explicit so a panel opened any
+            // other way can still take typing.
+            if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
             panel.makeKey()
             // SwiftUI focus (`@FocusState`) only lands once the hosting view
             // is the panel's first responder; `makeKey` alone leaves it nil.
