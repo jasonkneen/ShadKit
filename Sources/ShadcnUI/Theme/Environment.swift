@@ -23,6 +23,10 @@ private struct ShadcnGlassEnabledKey: EnvironmentKey {
     static let defaultValue = true
 }
 
+private struct ShadcnFloatingPanelHostedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     /// The active theme. Read this when you need the radius or type scale.
     public var shadcnTheme: ShadcnTheme {
@@ -59,6 +63,14 @@ extension EnvironmentValues {
         get { self[ShadcnGlassEnabledKey.self] }
         set { self[ShadcnGlassEnabledKey.self] = newValue }
     }
+
+    /// True inside content hosted by `ShadcnFloatingPanelController`. Such a
+    /// panel sits over the window's own content, so a glass or translucent
+    /// surface blurs the transcript behind it into smears; fills paint solid.
+    public var shadcnFloatingPanelHosted: Bool {
+        get { self[ShadcnFloatingPanelHostedKey.self] }
+        set { self[ShadcnFloatingPanelHostedKey.self] = newValue }
+    }
 }
 
 /// How overlay/panel fills behave when glass is on or the host is translucent.
@@ -86,6 +98,7 @@ public struct ShadcnTranslucentFill: View {
     @Environment(\.shadcnSurfaceOpacity) private var surfaceOpacity
     @Environment(\.shadcnHostProvidesGlass) private var hostProvidesGlass
     @Environment(\.shadcnGlassEnabled) private var glassEnabled
+    @Environment(\.shadcnFloatingPanelHosted) private var floatingPanelHosted
 
     public init(
         color: Color,
@@ -99,7 +112,10 @@ public struct ShadcnTranslucentFill: View {
 
     public var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if glassEnabled {
+        if floatingPanelHosted {
+            // Solid: glass would blur the window content behind the panel.
+            shape.fill(color)
+        } else if glassEnabled {
             if hostProvidesGlass {
                 Color.clear
             } else {

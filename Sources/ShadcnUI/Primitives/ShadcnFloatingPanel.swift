@@ -97,11 +97,11 @@ public final class ShadcnFloatingPanelController: NSObject {
         // than losing the glass.
         let hosting = NSHostingView(rootView: AnyView(
             content()
-                // A floating panel sits over the window's own content, so glass
-                // would blur the transcript behind it into smears. Paint the
-                // solid popover surface instead; opacity is ignored by glass.
-                .environment(\.shadcnGlassEnabled, false)
-                .environment(\.shadcnSurfaceOpacity, 1)))
+                // Fills inside paint solid (see ShadcnTranslucentFill): glass
+                // would blur the transcript behind the panel into smears. The
+                // key is read by the fill itself, so a caller re-injecting its
+                // own glass/opacity environment inside cannot undo it.
+                .environment(\.shadcnFloatingPanelHosted, true)))
         // Unlike `ShadcnHostingView` (which sets `sizingOptions = []` to
         // defer to the caller's Auto Layout constraints), this hosting view
         // has no constraints at all — it's positioned by explicit `setFrame`
@@ -212,11 +212,11 @@ public final class ShadcnFloatingPanelController: NSObject {
         // than losing the glass.
         let hosting = NSHostingView(rootView: AnyView(
             content()
-                // A floating panel sits over the window's own content, so glass
-                // would blur the transcript behind it into smears. Paint the
-                // solid popover surface instead; opacity is ignored by glass.
-                .environment(\.shadcnGlassEnabled, false)
-                .environment(\.shadcnSurfaceOpacity, 1)))
+                // Fills inside paint solid (see ShadcnTranslucentFill): glass
+                // would blur the transcript behind the panel into smears. The
+                // key is read by the fill itself, so a caller re-injecting its
+                // own glass/opacity environment inside cannot undo it.
+                .environment(\.shadcnFloatingPanelHosted, true)))
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         hosting.frame = NSRect(origin: .zero, size: anchorWindow.frame.size)
