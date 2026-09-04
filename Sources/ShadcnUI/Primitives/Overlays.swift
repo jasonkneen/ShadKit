@@ -881,9 +881,58 @@ struct ShadcnDialogModifier<DialogContent: View>: ViewModifier {
     let width: CGFloat
     let dialogContent: DialogContent
 
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+    #if canImport(AppKit)
+    @Environment(\.shadcnSurfaceOpacity) private var surfaceOpacity
+    @Environment(\.shadcnGlassEnabled) private var glassEnabled
+    @Environment(\.colorScheme) private var colorScheme
+    /// Window-backed (U19c): the in-tree host's dialog layer measured a
+    /// fresh `NSHostingView`'s `fittingSize` as (0, 0) — the same bug
+    /// `ShadcnFloatingPanelController` exists to fix for menus/selects —
+    /// which made `AIWorkspacePicker`'s dialog invisible rather than merely
+    /// clipped.
+    @State private var panelController = ShadcnFloatingPanelController()
+    #else
     /// Stable while this control lives — never regenerated on layout.
     @State private var overlayID = UUID()
+    #endif
 
+    #if canImport(AppKit)
+    func body(content: Content) -> some View {
+        content
+            .background(ShadcnFloatingAnchor(controller: panelController))
+            .onChange(of: isPresented) { _, presented in
+                if presented { showDialog() } else { panelController.close() }
+            }
+            .onAppear {
+                if isPresented { showDialog() }
+            }
+            .onDisappear { panelController.close() }
+    }
+
+    private func showDialog() {
+        panelController.showCentered(
+            onDismiss: { isPresented = false }
+        ) {
+            ZStack {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .onTapGesture { isPresented = false }
+
+                ShadcnDialogPanel(isPresented: $isPresented) {
+                    dialogContent
+                }
+                .frame(width: width)
+            }
+            .environment(\.shadcnTheme, theme)
+            .environment(\.shadcnPalette, palette)
+            .environment(\.shadcnSurfaceOpacity, surfaceOpacity)
+            .environment(\.shadcnGlassEnabled, glassEnabled)
+            .environment(\.colorScheme, colorScheme)
+        }
+    }
+    #else
     func body(content: Content) -> some View {
         content
             .shadcnDialogOverlay(
@@ -897,6 +946,7 @@ struct ShadcnDialogModifier<DialogContent: View>: ViewModifier {
                 }
             }
     }
+    #endif
 }
 
 /// The panel's own chrome plus the escape-to-dismiss shortcut. Reads

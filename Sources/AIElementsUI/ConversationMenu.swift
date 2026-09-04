@@ -3,8 +3,19 @@ import AppKit
 import ShadcnUI
 import SwiftUI
 
-/// Conversation switcher. Opens a real `NSPopover` so tabs, search, and
-/// scrolling work inside an AppKit-hosted Chat pane.
+/// Conversation switcher. Opens a window-backed floating panel
+/// (`ShadcnFloatingPanelController`) so tabs, search, and scrolling work
+/// inside an AppKit-hosted Chat pane.
+///
+/// U23: this used to be an `NSPopover`. Its content — search field, tab
+/// pills, thread list — reliably failed to paint (an empty dark rectangle
+/// above the one child that did, `+ New chat`), reproduced with the popover
+/// glass-wrapping disabled and content-controller `sizingOptions` at their
+/// default, so it wasn't either of the causes those particular knobs
+/// address. Whatever `NSPopover` + `NSHostingController` + this exact
+/// content tree does wrong, `ShadcnFloatingPanelController` sidesteps it
+/// entirely by construction (its content is already proven correct for the
+/// dropdown menu and dialog), rather than chasing a third theory.
 struct AIConversationMenu: NSViewRepresentable {
     var threads: [AIConversationEntry]
     var activeId: String?
@@ -45,16 +56,17 @@ struct AIConversationMenu: NSViewRepresentable {
         button.font = .systemFont(
             ofSize: compact ? 11 : 13, weight: .medium)
         context.coordinator.updateTitle(on: button)
-        context.coordinator.refreshPopoverIfOpen()
+        context.coordinator.refreshPanelIfOpen()
     }
 
-    final class Coordinator: NSObject, NSPopoverDelegate {
+    @MainActor
+    final class Coordinator: NSObject {
         var parent: AIConversationMenu?
         var palette: ShadcnPalette = ShadcnTheme.default.palette(for: .dark)
         var theme: ShadcnTheme = .default
         var surfaceOpacity: Double = 1
         var glassEnabled: Bool = true
-        var popover: NSPopover?
+        let panelController = ShadcnFloatingPanelController()
 
         var activeTitle: String {
             let threads = parent?.threads ?? []
@@ -72,83 +84,53 @@ struct AIConversationMenu: NSViewRepresentable {
         }
 
         @objc func toggle(_ sender: AIConversationMenuButton) {
-            if let popover, popover.isShown {
-                popover.close()
+            if panelController.isShown {
+                panelController.close()
                 return
             }
             present(from: sender)
         }
 
-        func refreshPopoverIfOpen() {
-            guard let popover, popover.isShown else { return }
-            popover.contentViewController = hostingController()
+        func refreshPanelIfOpen() {
+            guard panelController.isShown else { return }
+            panelController.updateContent(content: pickerContent)
         }
 
         private func present(from sender: NSView) {
-            let popover = NSPopover()
-            popover.behavior = .transient
-            popover.animates = false
-            popover.delegate = self
-            popover.contentSize = NSSize(width: 360, height: 440)
-            popover.appearance = NSAppearance(
-                named: palette.isDark ? .vibrantDark : .vibrantLight)
-            popover.contentViewController = hostingController()
-            self.popover = popover
-            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
-            ShadcnWindowTransparency.apply(to: popover)
+            panelController.anchorView = sender
+            panelController.show(
+                edge: .bottom, alignment: .leading,
+                contentWidth: 360, contentHeight: 440,
+                makesKey: true,
+                onDismiss: {},
+                content: pickerContent)
         }
 
-        private func hostingController() -> NSViewController {
+        @ViewBuilder
+        private func pickerContent() -> some View {
             let parent = self.parent
-            let glass = glassEnabled
-            let root = AIConversationPickerView(
+            AIConversationPickerView(
                 threads: parent?.threads ?? [],
                 activeId: parent?.activeId,
                 onSelect: { [weak self] id in
                     self?.parent?.onSelect(id)
-                    self?.popover?.close()
+                    self?.panelController.close()
                 },
                 onNew: { [weak self] in
                     self?.parent?.onNew()
-                    self?.popover?.close()
+                    self?.panelController.close()
                 },
                 onArchive: parent?.onArchive,
                 onFork: { [weak self] id in
                     self?.parent?.onFork?(id)
-                    self?.popover?.close()
+                    self?.panelController.close()
                 }
             )
-            .shadcnTheme(theme, surfaceOpacity: surfaceOpacity, glass: glass)
+            .environment(\.shadcnTheme, theme)
             .environment(\.shadcnPalette, palette)
-            .environment(\.shadcnHostProvidesGlass, glass)
-            .preferredColorScheme(palette.isDark ? .dark : .light)
-            let host = NSHostingController(rootView: AnyView(root))
-            host.sizingOptions = []
-            host.view.frame = NSRect(x: 0, y: 0, width: 360, height: 440)
-            host.view.wantsLayer = true
-            host.view.layer?.backgroundColor = NSColor.clear.cgColor
-            guard glass else { return host }
-
-            let wrapper = NSViewController()
-            wrapper.view = ShadcnWindowTransparency.wrap(
-                host.view,
-                frame: host.view.frame,
-                cornerRadius: 12,
-                glass: true)
-            wrapper.preferredContentSize = NSSize(width: 360, height: 440)
-            return wrapper
-        }
-
-        func popoverWillShow(_ notification: Notification) {
-            ShadcnWindowTransparency.apply(to: popover)
-        }
-
-        func popoverDidShow(_ notification: Notification) {
-            ShadcnWindowTransparency.apply(to: popover)
-        }
-
-        func popoverDidClose(_ notification: Notification) {
-            popover = nil
+            .environment(\.shadcnSurfaceOpacity, surfaceOpacity)
+            .environment(\.shadcnGlassEnabled, glassEnabled)
+            .environment(\.colorScheme, palette.isDark ? .dark : .light)
         }
     }
 }

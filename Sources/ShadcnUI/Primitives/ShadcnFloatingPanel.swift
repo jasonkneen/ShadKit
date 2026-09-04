@@ -33,9 +33,13 @@ struct ShadcnFloatingAnchor: NSViewRepresentable {
 public final class ShadcnFloatingPanelController: NSObject {
     /// Set by `ShadcnFloatingAnchor` on `makeNSView`/`updateNSView`. Weak: the
     /// anchor view's lifetime is owned by SwiftUI, not this controller.
-    weak var anchorView: NSView?
+    /// Public so a caller that already has a real `NSView` in hand (an
+    /// `NSViewRepresentable`'s own trigger, e.g. `AIConversationMenu`) can
+    /// set this directly, instead of going through `ShadcnFloatingAnchor`.
+    public weak var anchorView: NSView?
 
     private var panel: NSPanel?
+    private var hostingView: NSHostingView<AnyView>?
     private var eventMonitor: Any?
     private var previousKeyWindow: NSWindow?
     private var onDismiss: (() -> Void)?
@@ -149,6 +153,64 @@ public final class ShadcnFloatingPanelController: NSObject {
         }
 
         self.panel = panel
+        self.hostingView = hosting
+        self.onDismiss = onDismiss
+        installEventMonitor()
+    }
+
+    /// Swaps the content of an already-open panel — a live model update
+    /// (the thread list changing while the panel is open) shouldn't need a
+    /// full close/reopen, which would flash and drop focus.
+    public func updateContent<Content: View>(@ViewBuilder content: () -> Content) {
+        hostingView?.rootView = AnyView(content())
+    }
+
+    /// Shows `content` as a full-window panel covering the anchor's own
+    /// window — for `shadcnDialog` (U19c), which centers over the host
+    /// rather than anchoring to a small trigger. `content` is expected to
+    /// draw its own scrim plus a centered box (`ZStack`'s default alignment
+    /// does the centering); unlike `show(edge:alignment:...)` this needs no
+    /// `fittingSize` measurement pass, since the panel's own size is the
+    /// anchor window's frame, known upfront.
+    ///
+    /// `makesKey` defaults to `true`: a dialog's text field and Escape
+    /// shortcut need real keyboard focus, unlike a menu/select/hover card.
+    public func showCentered<Content: View>(
+        makesKey: Bool = true,
+        onDismiss: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        close()
+        guard let anchorWindow = anchorView?.window else { return }
+
+        let hosting = NSHostingView(rootView: AnyView(content()))
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
+        hosting.frame = NSRect(origin: .zero, size: anchorWindow.frame.size)
+
+        let panel = NSPanel(
+            contentRect: anchorWindow.frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .popUpMenu
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.contentView = hosting
+
+        anchorWindow.addChildWindow(panel, ordered: .above)
+        panel.level = .popUpMenu
+        panel.orderFront(nil)
+        if makesKey {
+            previousKeyWindow = NSApp.keyWindow
+            panel.makeKey()
+        }
+
+        self.panel = panel
+        self.hostingView = hosting
         self.onDismiss = onDismiss
         installEventMonitor()
     }
@@ -179,6 +241,7 @@ public final class ShadcnFloatingPanelController: NSObject {
         anchorView?.window?.removeChildWindow(panel)
         panel.orderOut(nil)
         self.panel = nil
+        self.hostingView = nil
         let dismiss = onDismiss
         onDismiss = nil
         dismiss?()
