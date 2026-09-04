@@ -66,7 +66,11 @@ public struct ShadcnTextField: View {
         .onTapGesture { isFocused = true }
         .onAppear {
             guard autofocus else { return }
-            DispatchQueue.main.async { isFocused = true }
+            // A field inside a floating panel appears before the panel is key,
+            // and focus requested then is dropped; ask again once it is.
+            for delay in [0.0, 0.15, 0.4] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { isFocused = true }
+            }
         }
     }
 
