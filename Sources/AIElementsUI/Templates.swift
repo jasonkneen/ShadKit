@@ -35,6 +35,8 @@ public struct AIPromptPillButton: View {
                 }
             }
             .padding(.horizontal, title == nil ? 0 : Space.x1)
+            // Icon-only: a true circle, not a short capsule.
+            .frame(width: title == nil ? 32 : nil, height: 32)
         }
         .buttonStyle(
             ShadcnButtonStyle(
