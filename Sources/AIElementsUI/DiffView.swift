@@ -151,6 +151,19 @@ public enum AIWordDiff {
 public enum AIDiffMode: String, CaseIterable, Sendable {
     case unified
     case split
+    /// True side-by-side: old and new text paired on one row, two number
+    /// gutters, aligned by hunk with a blank filler row on whichever side
+    /// has no line for that row. `.split` keeps its existing dual-gutter,
+    /// single-column output unchanged — this is a separate mode.
+    case sideBySide
+}
+
+/// One row of a side-by-side diff: the old-file line, the new-file line, or
+/// both — never neither.
+struct AIDiffSplitPair: Identifiable {
+    let id: Int
+    let old: AIDiffLine?
+    let new: AIDiffLine?
 }
 
 /// A diff viewer built from the design system.
@@ -208,7 +221,13 @@ public struct AIDiffView: View {
 
     public var body: some View {
         Group {
-            if usesLazyRows {
+            if mode == .sideBySide {
+                if usesLazyRows {
+                    LazyVStack(alignment: .leading, spacing: 0) { sideBySideRows }
+                } else {
+                    VStack(alignment: .leading, spacing: 0) { sideBySideRows }
+                }
+            } else if usesLazyRows {
                 LazyVStack(alignment: .leading, spacing: 0) { rowViews }
             } else {
                 VStack(alignment: .leading, spacing: 0) { rowViews }
@@ -236,6 +255,77 @@ public struct AIDiffView: View {
                 collapsedRow(id: id, count: count)
             }
         }
+    }
+
+    @ViewBuilder
+    private var sideBySideRows: some View {
+        ForEach(Self.splitPairs(from: lines)) { pair in
+            HStack(alignment: .top, spacing: 0) {
+                sideBySideHalf(pair.old)
+                Rectangle().fill(palette.border).frame(width: 1)
+                sideBySideHalf(pair.new)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sideBySideHalf(_ line: AIDiffLine?) -> some View {
+        if let line {
+            AIDiffLineRow(
+                line: line, counterpart: nil, showsBothNumbers: false,
+                language: language, fontSize: fontSize)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Color.clear.frame(maxWidth: .infinity, minHeight: 1)
+        }
+    }
+
+    /// Pairs old/new lines for the side-by-side layout: context and hunk
+    /// lines appear on both sides identically; a run of removed lines pairs
+    /// positionally against the run of added lines that follows it (the
+    /// standard side-by-side diff heuristic), with a blank filler row on
+    /// whichever side runs out first.
+    static func splitPairs(from lines: [AIDiffLine]) -> [AIDiffSplitPair] {
+        var pairs: [AIDiffSplitPair] = []
+        var index = 0
+        var rowID = 0
+
+        while index < lines.count {
+            let line = lines[index]
+            switch line.kind {
+            case .context, .hunk:
+                pairs.append(AIDiffSplitPair(id: rowID, old: line, new: line))
+                rowID += 1
+                index += 1
+
+            case .removed:
+                var removed: [AIDiffLine] = []
+                while index < lines.count, lines[index].kind == .removed {
+                    removed.append(lines[index])
+                    index += 1
+                }
+                var added: [AIDiffLine] = []
+                while index < lines.count, lines[index].kind == .added {
+                    added.append(lines[index])
+                    index += 1
+                }
+                for row in 0..<max(removed.count, added.count) {
+                    pairs.append(
+                        AIDiffSplitPair(
+                            id: rowID,
+                            old: row < removed.count ? removed[row] : nil,
+                            new: row < added.count ? added[row] : nil))
+                    rowID += 1
+                }
+
+            case .added:
+                // A pure insertion with no preceding removal.
+                pairs.append(AIDiffSplitPair(id: rowID, old: nil, new: line))
+                rowID += 1
+                index += 1
+            }
+        }
+        return pairs
     }
 
     // MARK: Rows

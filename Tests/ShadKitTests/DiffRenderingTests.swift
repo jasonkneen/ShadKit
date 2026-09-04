@@ -71,4 +71,45 @@ final class DiffRenderingTests: XCTestCase {
         let changed = AIWordDiff.changedRanges(old: "x = 1", new: "    x = 1")
         XCTAssertTrue(changed.contains(true), "whitespace shifts are real changes")
     }
+
+    // MARK: - Side-by-side pairing
+
+    func testContextLinesAppearOnBothSidesIdentically() {
+        let unified = "@@ -1,2 +1,2 @@\n context line"
+        let lines = AIDiffParser.parse(unified: unified)
+        let pairs = AIDiffView.splitPairs(from: lines)
+        XCTAssertTrue(pairs.contains { $0.old?.text == "context line" && $0.new?.text == "context line" })
+    }
+
+    func testEqualCountChangeBlockPairsPositionally() {
+        let unified = "-old one\n-old two\n+new one\n+new two"
+        let lines = AIDiffParser.parse(unified: unified)
+        let pairs = AIDiffView.splitPairs(from: lines)
+        XCTAssertEqual(pairs.count, 2)
+        XCTAssertEqual(pairs[0].old?.text, "old one")
+        XCTAssertEqual(pairs[0].new?.text, "new one")
+        XCTAssertEqual(pairs[1].old?.text, "old two")
+        XCTAssertEqual(pairs[1].new?.text, "new two")
+    }
+
+    func testUnequalCountChangeBlockFillsTheShorterSideWithNil() {
+        let unified = "-old one\n+new one\n+new two\n+new three"
+        let lines = AIDiffParser.parse(unified: unified)
+        let pairs = AIDiffView.splitPairs(from: lines)
+        XCTAssertEqual(pairs.count, 3)
+        XCTAssertEqual(pairs[0].old?.text, "old one")
+        XCTAssertEqual(pairs[0].new?.text, "new one")
+        XCTAssertNil(pairs[1].old)
+        XCTAssertEqual(pairs[1].new?.text, "new two")
+        XCTAssertNil(pairs[2].old)
+        XCTAssertEqual(pairs[2].new?.text, "new three")
+    }
+
+    func testPureInsertionHasNoOldSide() {
+        let unified = " context\n+added only"
+        let lines = AIDiffParser.parse(unified: unified)
+        let pairs = AIDiffView.splitPairs(from: lines)
+        XCTAssertNil(pairs.last?.old)
+        XCTAssertEqual(pairs.last?.new?.text, "added only")
+    }
 }
