@@ -207,6 +207,10 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
     @Environment(\.shadcnTheme) private var theme
     @FocusState private var isFocused: Bool
     @State private var activePalette: AIPromptPalette?
+    /// Character offset of the trigger that opened `activePalette`, tracked
+    /// so a later edit can tell "the trigger is still the token under
+    /// point" from "the user kept typing past it" without caret access.
+    @State private var paletteAnchor: Int?
 
     public init(
         text: Binding<String>,
@@ -326,27 +330,69 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
     private var isPaletteDialogPresented: Binding<Bool> {
         Binding(
             get: { activePalette != nil },
-            set: { isPresented in if !isPresented { activePalette = nil } }
+            set: { isPresented in if !isPresented { dismissPalette(restoreFocus: true) } }
         )
     }
 
-    /// A bare trailing trigger character (`@`/`/`) opens its palette — no
-    /// mid-word matching, no caret tracking, no tiptap. Whitespace after the
-    /// trigger, or the trigger no longer being the last character, closes it.
+    /// A trailing trigger character (`@`/`/`) opens its palette, but only
+    /// when it starts a token — the first character of the text, or
+    /// preceded by whitespace — so an email or a path segment doesn't fire
+    /// it. Once open, typing whitespace after the trigger, or the trigger no
+    /// longer being where it was anchored (e.g. deleted), closes it — the
+    /// behaviour the doc comment on `AIPromptPalette` promises.
     private func updateActivePalette(for value: String) {
+        if let anchor = paletteAnchor, let trigger = activePalette?.trigger {
+            guard anchor < value.count else { dismissPalette(restoreFocus: false); return }
+            let anchorIndex = value.index(value.startIndex, offsetBy: anchor)
+            guard value[anchorIndex] == trigger else {
+                dismissPalette(restoreFocus: false)
+                return
+            }
+            let afterTrigger = value[value.index(after: anchorIndex)...]
+            if afterTrigger.contains(where: { $0.isWhitespace }) {
+                dismissPalette(restoreFocus: false)
+            }
+            return
+        }
+
         guard let last = value.last, let matched = palettes.first(where: { $0.trigger == last })
         else { return }
+
+        let precededByWhitespace: Bool
+        if value.count == 1 {
+            precededByWhitespace = true
+        } else {
+            let beforeIndex = value.index(value.endIndex, offsetBy: -2)
+            precededByWhitespace = value[beforeIndex].isWhitespace
+        }
+        guard precededByWhitespace else { return }
+
         activePalette = matched
+        paletteAnchor = value.count - 1
     }
 
     private func handlePaletteSelect(_ item: ShadcnCommandItem) {
-        guard let trigger = activePalette?.trigger else { return }
-        if text.hasSuffix(String(trigger)) {
-            text.removeLast()
-        }
-        text += item.title + " "
+        guard let trigger = activePalette?.trigger, let anchor = paletteAnchor,
+            anchor <= text.count
+        else { return }
+        let anchorIndex = text.index(text.startIndex, offsetBy: anchor)
+        // Keep everything up to and including the trigger; replace whatever
+        // was typed after it with the chosen item's insertion text.
+        let insertion = item.insertion ?? item.title
+        text.replaceSubrange(text.index(after: anchorIndex)..., with: insertion + " ")
         onPaletteSelect?(trigger, item)
+        dismissPalette(restoreFocus: true)
+    }
+
+    private func dismissPalette(restoreFocus: Bool) {
         activePalette = nil
+        paletteAnchor = nil
+        guard restoreFocus else { return }
+        // The dialog just released first responder; hop a beat so AppKit
+        // finishes tearing it down before the composer reclaims focus.
+        DispatchQueue.main.async {
+            isFocused = true
+        }
     }
 
     @ViewBuilder

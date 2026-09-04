@@ -17,6 +17,7 @@ struct ShadcnSheetModifier<SheetContent: View>: ViewModifier {
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @FocusState private var focusTrap: Bool
 
     private var alignment: Alignment { edge == .leading ? .leading : .trailing }
     private var slideEdge: Edge { edge == .leading ? .leading : .trailing }
@@ -34,8 +35,20 @@ struct ShadcnSheetModifier<SheetContent: View>: ViewModifier {
 
                         panel
                             .transition(.move(edge: slideEdge))
+
+                        // Escape dismisses. A hidden button carrying the
+                        // window-level shortcut, not `.onKeyPress`, since
+                        // nothing in the scrim itself holds keyboard focus.
+                        Button("") {
+                            withAnimation(.easeOut(duration: 0.15)) { isPresented = false }
+                        }
+                        .keyboardShortcut(.cancelAction)
+                        .opacity(0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                     }
                     .zIndex(1000)
+                    .task { focusTrap = true }
                 }
             }
     }
@@ -71,6 +84,12 @@ struct ShadcnSheetModifier<SheetContent: View>: ViewModifier {
             .accessibilityLabel("Close")
         }
         .ignoresSafeArea(edges: .vertical)
+        // Initial focus lands in the sheet on presentation, and VoiceOver is
+        // told this subtree is modal — matching Radix `Dialog`/`Sheet`'s
+        // `aria-modal` and focus-trap behaviour.
+        .focusable()
+        .focused($focusTrap)
+        .accessibilityAddTraits(.isModal)
     }
 }
 

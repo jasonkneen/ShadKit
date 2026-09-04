@@ -843,6 +843,17 @@ struct ShadcnDialogModifier<DialogContent: View>: ViewModifier {
                         .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
                         .shadcnShadow(.lg)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
+
+                        // Escape dismisses. A hidden button carrying the
+                        // window-level shortcut, not `.onKeyPress`, since the
+                        // scrim never holds keyboard focus itself.
+                        Button("") {
+                            withAnimation(.easeOut(duration: 0.15)) { isPresented = false }
+                        }
+                        .keyboardShortcut(.cancelAction)
+                        .opacity(0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                     }
                     .zIndex(1000)
                 }

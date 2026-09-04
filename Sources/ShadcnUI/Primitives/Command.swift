@@ -10,13 +10,25 @@ public struct ShadcnCommandItem: Identifiable, Sendable {
     public var subtitle: String?
     public var icon: String?
     public var shortcut: String?
+    /// Text a palette consumer should insert in place of `title` when the
+    /// display label and the value to write back differ. `nil` falls back to
+    /// `title`, so existing callers are unaffected.
+    public var insertion: String?
 
-    public init(id: String, title: String, subtitle: String? = nil, icon: String? = nil, shortcut: String? = nil) {
+    public init(
+        id: String,
+        title: String,
+        subtitle: String? = nil,
+        icon: String? = nil,
+        shortcut: String? = nil,
+        insertion: String? = nil
+    ) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.icon = icon
         self.shortcut = shortcut
+        self.insertion = insertion
     }
 }
 
@@ -64,21 +76,32 @@ public struct ShadcnCommand: View {
     private let emptyText: String
     private let onSelect: (ShadcnCommandItem) -> Void
 
+    /// Called on Escape. `nil` (the standalone-embed default) means Escape
+    /// does nothing; `shadcnCommandDialog` supplies one that dismisses.
+    private var onEscape: (() -> Void)?
+
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
     @State private var query = ""
     @State private var highlighted: String?
+    /// Only hover moves the highlight, and only when the pointer actually
+    /// moved — set by `.onContinuousHover`'s location, not by `.onHover`'s
+    /// boolean, so a stationary pointer left over a row doesn't re-steal the
+    /// highlight the moment arrow keys re-lay-out the list under it.
+    @State private var lastHoverLocation: CGPoint?
     @FocusState private var isFieldFocused: Bool
 
     public init(
         groups: [ShadcnCommandGroup],
         placeholder: String = "Type a command or search...",
         emptyText: String = "No results found.",
+        onEscape: (() -> Void)? = nil,
         onSelect: @escaping (ShadcnCommandItem) -> Void
     ) {
         self.groups = groups
         self.placeholder = placeholder
         self.emptyText = emptyText
+        self.onEscape = onEscape
         self.onSelect = onSelect
     }
 
@@ -91,41 +114,47 @@ public struct ShadcnCommand: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            searchField
-            Divider().overlay(palette.border)
+        ScrollViewReader { scrollProxy in
+            VStack(alignment: .leading, spacing: 0) {
+                searchField
+                Divider().overlay(palette.border)
 
-            if flatItems.isEmpty {
-                Text(emptyText)
-                    .font(theme.typography.sans(theme.typography.sm))
-                    .foregroundStyle(palette.mutedForeground)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Space.x6)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Space.x1) {
-                        ForEach(filtered) { group in
-                            groupSection(group)
+                if flatItems.isEmpty {
+                    Text(emptyText)
+                        .font(theme.typography.sans(theme.typography.sm))
+                        .foregroundStyle(palette.mutedForeground)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Space.x6)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: Space.x1) {
+                            ForEach(filtered) { group in
+                                groupSection(group)
+                            }
                         }
+                        .padding(Space.x1)
                     }
-                    .padding(Space.x1)
+                    .frame(maxHeight: 288)
                 }
-                .frame(maxHeight: 288)
+            }
+            .background(
+                ShadcnTranslucentFill(color: palette.popover, cornerRadius: theme.radius.xl)
+            )
+            .onAppear { syncHighlight() }
+            .onChange(of: query) { _, _ in syncHighlight() }
+            .onChange(of: highlighted) { _, id in
+                guard let id else { return }
+                withAnimation(nil) {
+                    scrollProxy.scrollTo(id, anchor: nil)
+                }
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: theme.radius.xl, style: .continuous)
-                .fill(palette.popover)
-        )
-        .onAppear { syncHighlight() }
-        .onChange(of: query) { _, _ in syncHighlight() }
     }
 
     private var searchField: some View {
         HStack(spacing: Space.x2) {
-            Image(systemName: ShadcnIcon.search)
+            ShadcnIconView(ShadcnIcon.search, size: 14)
                 .foregroundStyle(palette.mutedForeground)
-                .font(.system(size: 14))
 
             TextField(placeholder, text: $query)
                 .textFieldStyle(.plain)
@@ -134,16 +163,21 @@ public struct ShadcnCommand: View {
                 .onSubmit { selectHighlighted() }
                 .onKeyPress(.downArrow) { moveHighlight(by: 1); return .handled }
                 .onKeyPress(.upArrow) { moveHighlight(by: -1); return .handled }
+                .onKeyPress(.escape) {
+                    guard let onEscape else { return .ignored }
+                    onEscape()
+                    return .handled
+                }
         }
         .padding(.horizontal, Space.x3)
         .frame(height: 44)
-        .onAppear { isFieldFocused = true }
+        .task { isFieldFocused = true }
     }
 
     private func groupSection(_ group: ShadcnCommandGroup) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(group.title.uppercased())
-                .font(.system(size: 11, weight: .medium))
+                .font(theme.typography.sans(theme.typography.xs, weight: .medium))
                 .foregroundStyle(palette.mutedForeground)
                 .padding(.horizontal, Space.x2)
                 .padding(.top, Space.x1_5)
@@ -162,22 +196,21 @@ public struct ShadcnCommand: View {
         } label: {
             HStack(spacing: Space.x2) {
                 if let icon = item.icon {
-                    Image(systemName: icon)
-                        .frame(width: 16, height: 16)
+                    ShadcnIconView(icon, size: 16)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.title)
                         .font(theme.typography.sans(theme.typography.sm))
                     if let subtitle = item.subtitle {
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .font(theme.typography.sans(theme.typography.xs))
                             .foregroundStyle(palette.mutedForeground)
                     }
                 }
                 Spacer(minLength: Space.x2)
                 if let shortcut = item.shortcut {
                     Text(shortcut)
-                        .font(.system(size: 11))
+                        .font(theme.typography.sans(theme.typography.xs))
                         .foregroundStyle(palette.mutedForeground)
                 }
             }
@@ -192,7 +225,21 @@ public struct ShadcnCommand: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering in if hovering { highlighted = item.id } }
+        .id(item.id)
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let location):
+                // Only a real pointer move updates the highlight — comparing
+                // the reported location filters out the phantom `.active`
+                // AppKit re-delivers when the list relayouts under a
+                // stationary cursor after an arrow-key move.
+                if let lastHoverLocation, lastHoverLocation == location { return }
+                lastHoverLocation = location
+                highlighted = item.id
+            case .ended:
+                lastHoverLocation = nil
+            }
+        }
     }
 
     private func moveHighlight(by delta: Int) {
@@ -218,6 +265,7 @@ public struct ShadcnCommand: View {
 extension View {
     /// Presents a `ShadcnCommand` palette in a `shadcnDialog`, matching
     /// `CommandDialog`'s upper-third placement and hidden-close affordance.
+    /// Escape dismisses, same as the scrim tap.
     public func shadcnCommandDialog(
         isPresented: Binding<Bool>,
         groups: [ShadcnCommandGroup],
@@ -249,6 +297,7 @@ private struct ShadcnCommandDialogModifier: ViewModifier {
                     groups: groups,
                     placeholder: placeholder,
                     emptyText: emptyText,
+                    onEscape: { isPresented = false },
                     onSelect: { item in
                         isPresented = false
                         onSelect(item)
