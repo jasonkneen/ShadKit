@@ -318,19 +318,21 @@ public struct AIChatbot<Composer: View, Inspector: View>: View {
                 ShadcnSeparator()
             }
 
+            // The composer is built once, at one structural position, below
+            // both branches — earlier this called `composer(...)` from two
+            // different places in the tree, which SwiftUI treats as two
+            // different identities: sending the first message tore one
+            // instance down and built the other, resetting the textarea's
+            // focus and dropping any in-flight IME composition.
             VStack(spacing: Space.x4) {
                 if chat.messages.isEmpty {
                     // Centered start state — matches the source's empty
                     // conversation, before any turn has happened.
                     Spacer(minLength: 0)
                     AIConversationEmptyState(systemImage: ShadcnIcon.sparkles)
-                    VStack(spacing: Space.x3) {
-                        if !suggestions.isEmpty {
-                            AISuggestions(suggestions) { chat.sendMessage($0) }
-                        }
-                        composer($chat.input, chat.status.promptStatus)
+                    if !suggestions.isEmpty {
+                        AISuggestions(suggestions) { chat.sendMessage($0) }
                     }
-                    .frame(maxWidth: 640)
                     Spacer(minLength: 0)
                 } else {
                     // The dial is a read-head for the transcript, so it rides
@@ -362,9 +364,10 @@ public struct AIChatbot<Composer: View, Inspector: View>: View {
                             onMove: onMoveQueued
                         )
                     }
-
-                    composer($chat.input, chat.status.promptStatus)
                 }
+
+                composer($chat.input, chat.status.promptStatus)
+                    .frame(maxWidth: chat.messages.isEmpty ? 640 : .infinity)
             }
             .padding(.horizontal, Space.x4)
             .padding(.bottom, Space.x4)
