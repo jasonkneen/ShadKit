@@ -96,6 +96,10 @@ public struct AIPromptInputStyle: Sendable {
 public struct AIPromptInputAttachments: View {
     /// One pending attachment. `id` is the caller's own identifier — the row
     /// only echoes it back on removal.
+    ///
+    /// Not `Sendable`: `image` is an `Image` and `actions` carries plain
+    /// closures, both main-actor UI values. Documented rather than omitted
+    /// — see the package's Sendable review.
     public struct Item: Identifiable {
         public let id: String
         public let filename: String
@@ -162,7 +166,7 @@ public struct AIPromptInputAttachments: View {
 /// trigger character opens a `ShadcnCommand` list (wave 1's palette shell —
 /// there is no second one here); picking an item replaces the trigger with
 /// the item's title.
-public struct AIPromptPalette {
+public struct AIPromptPalette: Sendable {
     public var trigger: Character
     public var groups: [ShadcnCommandGroup]
     public var placeholder: String

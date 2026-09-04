@@ -148,6 +148,13 @@ public struct AICodeBlock: View {
 
 /// A host-supplied renderer for `html` / `svg` fences. The host app owns the
 /// actual web view; AIElementsUI never imports WebKit.
+///
+/// `@MainActor`, since the sole requirement returns a `View`: under Swift 6
+/// language mode a `nonisolated` requirement satisfied by a `@MainActor`
+/// conformer fails to build ("main actor-isolated instance method ... cannot
+/// be used to satisfy nonisolated protocol requirement"), and every real
+/// renderer is main-actor UI.
+@MainActor
 public protocol AICodeBlockPreviewRenderer {
     associatedtype Body: View
     @ViewBuilder func preview(for source: String, language: String) -> Body
@@ -156,7 +163,9 @@ public protocol AICodeBlockPreviewRenderer {
 /// Type-erased wrapper so the renderer can live in the SwiftUI environment
 /// (an associatedtype protocol cannot be stored directly).
 public struct AnyAICodeBlockPreviewRenderer {
-    let render: (String, String) -> AnyView
+    /// `@MainActor`, matching the protocol it type-erases — `AICodeBlock`
+    /// only ever calls this from its (main-actor) `body`.
+    let render: @MainActor (String, String) -> AnyView
 
     public init<R: AICodeBlockPreviewRenderer>(_ renderer: R) {
         self.render = { source, language in
@@ -165,7 +174,7 @@ public struct AnyAICodeBlockPreviewRenderer {
     }
 
     /// Closure form, for hosts that don't want to declare a type.
-    public init(_ render: @escaping (_ source: String, _ language: String) -> AnyView) {
+    public init(_ render: @escaping @MainActor (_ source: String, _ language: String) -> AnyView) {
         self.render = render
     }
 }

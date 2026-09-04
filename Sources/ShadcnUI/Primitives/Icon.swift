@@ -62,6 +62,7 @@ public enum ShadcnIcon {
     public static let camera = "camera"
     public static let bookmark = "bookmark"
     public static let eye = "eye"
+    public static let house = "house"
 }
 
 /// An icon sized and weighted to sit where a Lucide glyph would.

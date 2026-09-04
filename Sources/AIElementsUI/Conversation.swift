@@ -158,6 +158,11 @@ struct AIConversationPinningState: Equatable, Sendable {
 /// One stop on ``AIDial`` — a message, turn, or other addressable point in a
 /// transcript. Major ticks draw wider and anchor a preview; minor ticks are
 /// the quiet marks between them. `isMajor` means "the human asked this".
+// Checked against this toolchain: `AnyHashable` does not conform to
+// `Sendable` here (it produces a strict-concurrency warning, not the
+// "one-word fix" the outlier looked like), so `AIDialTick` stays
+// non-Sendable rather than mis-declare the conformance. Documented as an
+// intentional omission — see the package's Sendable review.
 public struct AIDialTick: Identifiable {
     public let id: AnyHashable
     public let label: String
@@ -226,6 +231,12 @@ public struct AIDial: View {
                     }
                 }
                 .frame(width: railHitWidth)
+                // Past ~150 messages in a 300pt rail, `gap` falls under the
+                // 2pt floor each tick is clamped to, so the stack's
+                // intrinsic height outgrows the container. Clip to the rail
+                // rather than let the tail run off the bottom uncontained.
+                .frame(height: geometry.size.height, alignment: .top)
+                .clipped()
 
                 if let previewIndex, previewIndex < ticks.count {
                     previewCard(for: ticks[previewIndex])
@@ -249,21 +260,26 @@ public struct AIDial: View {
         let isHovered = tick.id == hoveredID
         let isEmphasized = isActive || isHovered
 
-        return Capsule()
-            .fill(palette.foreground)
-            .opacity(isEmphasized ? 1 : (tick.isMajor ? 0.7 : 0.25))
-            .frame(
-                width: isEmphasized ? Space.step(7) : (tick.isMajor ? Space.x5 : Space.x2_5),
-                height: isEmphasized ? 2 : 1
-            )
-            .frame(width: railHitWidth, height: hitHeight, alignment: side == .leading ? .leading : .trailing)
-            .contentShape(Rectangle())
-            #if os(macOS)
-            .onHover { hovering in hoveredID = hovering ? tick.id : nil }
-            #endif
-            .onTapGesture { onSelect(tick.id) }
-            .accessibilityLabel(tick.label)
-            .animation(.easeOut(duration: 0.15), value: isEmphasized)
+        return Button {
+            onSelect(tick.id)
+        } label: {
+            Capsule()
+                .fill(palette.foreground)
+                .opacity(isEmphasized ? 1 : (tick.isMajor ? 0.7 : 0.25))
+                .frame(
+                    width: isEmphasized ? Space.step(7) : (tick.isMajor ? Space.x5 : Space.x2_5),
+                    height: isEmphasized ? 2 : 1
+                )
+                .frame(width: railHitWidth, height: hitHeight, alignment: side == .leading ? .leading : .trailing)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        #if os(macOS)
+        .onHover { hovering in hoveredID = hovering ? tick.id : nil }
+        #endif
+        .accessibilityLabel(tick.label)
+        .accessibilityAddTraits(.isButton)
+        .animation(.easeOut(duration: 0.15), value: isEmphasized)
     }
 
     private func previewCard(for tick: AIDialTick) -> some View {
@@ -279,8 +295,7 @@ public struct AIDial: View {
         .padding(Space.x3)
         .frame(width: previewWidth, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: theme.radius.xl, style: .continuous)
-                .fill(palette.card)
+            ShadcnTranslucentFill(color: palette.card, cornerRadius: theme.radius.xl)
         )
         .shadcnBorder(palette.border, cornerRadius: theme.radius.xl)
         .shadcnShadow(.lg)

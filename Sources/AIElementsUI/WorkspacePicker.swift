@@ -77,10 +77,12 @@ public struct AIWorkspacePicker: View {
             isPresented = true
         } label: {
             HStack(spacing: Space.x1_5) {
-                Image(systemName: current?.isGit == true ? "arrow.triangle.branch" : ShadcnIcon.folder)
-                    .font(.system(size: 11))
+                ShadcnIconView(
+                    current?.isGit == true ? ShadcnIcon.gitBranch : ShadcnIcon.folder,
+                    size: 11
+                )
                 Text(triggerLabel)
-                    .font(.system(size: 11))
+                    .font(theme.typography.sans(theme.typography.xs))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -114,14 +116,14 @@ public struct AIWorkspacePicker: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 11))
+                    .font(theme.typography.sans(theme.typography.xs))
                     .foregroundStyle(palette.destructive)
             }
 
             if !recents.isEmpty {
                 VStack(alignment: .leading, spacing: Space.x1) {
                     Text("RECENT")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(theme.typography.sans(theme.typography.xs, weight: .medium))
                         .foregroundStyle(palette.mutedForeground)
 
                     VStack(spacing: 2) {
@@ -141,11 +143,11 @@ public struct AIWorkspacePicker: View {
     private func recentRow(_ entry: AIWorkspaceEntry) -> some View {
         Button { onChoose(entry.path) } label: {
             HStack(spacing: Space.x2) {
-                Image(systemName: entry.isGit ? "arrow.triangle.branch" : ShadcnIcon.folder)
+                ShadcnIconView(entry.isGit ? ShadcnIcon.gitBranch : ShadcnIcon.folder, size: 16)
                 Text(entry.name).font(theme.typography.sans(theme.typography.sm)).fontWeight(.medium)
                 Spacer(minLength: Space.x2)
                 Text(entry.path)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(theme.typography.mono(theme.typography.xs))
                     .foregroundStyle(palette.mutedForeground)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -164,18 +166,18 @@ public struct AIWorkspacePicker: View {
         VStack(alignment: .leading, spacing: Space.x1) {
             HStack(spacing: Space.x1) {
                 Button { if let parent = browse.parent { onBrowse(parent) } } label: {
-                    Image(systemName: ShadcnIcon.chevronLeft)
+                    ShadcnIconView(ShadcnIcon.chevronLeft, size: 16)
                 }
                 .buttonStyle(.plain)
                 .disabled(browse.parent == nil)
 
                 Button { onBrowse("") } label: {
-                    Image(systemName: "house")
+                    ShadcnIconView(ShadcnIcon.house, size: 16)
                 }
                 .buttonStyle(.plain)
 
                 Text(browse.path)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(theme.typography.mono(theme.typography.xs))
                     .foregroundStyle(palette.mutedForeground)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -200,14 +202,17 @@ public struct AIWorkspacePicker: View {
                                     onBrowse(entry.path)
                                 } label: {
                                     HStack(spacing: Space.x2) {
-                                        Image(systemName: entry.isGit ? "arrow.triangle.branch" : ShadcnIcon.folder)
-                                            .foregroundStyle(palette.mutedForeground)
+                                        ShadcnIconView(
+                                            entry.isGit ? ShadcnIcon.gitBranch : ShadcnIcon.folder,
+                                            size: 16
+                                        )
+                                        .foregroundStyle(palette.mutedForeground)
                                         Text(entry.name)
                                             .font(theme.typography.sans(theme.typography.sm))
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                         if entry.isGit {
                                             Text("git")
-                                                .font(.system(size: 11))
+                                                .font(theme.typography.sans(theme.typography.xs))
                                                 .foregroundStyle(palette.mutedForeground)
                                         }
                                     }

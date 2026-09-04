@@ -310,6 +310,10 @@ public struct AIMessageBranchSelector: View {
 
 /// One hover-revealed action on an ``AIMessageAttachment`` tile, alongside
 /// the built-in remove button.
+///
+/// Not `Sendable`: `action` is a plain, non-`@Sendable` closure, since it
+/// only ever runs on the main actor from inside the button that owns it.
+/// Documented rather than omitted — see the package's Sendable review.
 public struct AIMessageAttachmentAction: Identifiable {
     public let id: String
     public let label: String
@@ -410,7 +414,7 @@ public struct AIMessageAttachment: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Space.x1)
-                    .background(AITailwindColor.red600.opacity(0.85))
+                    .background(palette.destructive.opacity(0.85))
                 }
                 .frame(width: 96, height: 96, alignment: .bottom)
                 .clipShape(RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous))

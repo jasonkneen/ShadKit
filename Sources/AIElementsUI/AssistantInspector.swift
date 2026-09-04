@@ -114,6 +114,10 @@ public struct AIInspector: View {
     @Binding private var tab: AIInspectorTab
     @Binding private var commitMessage: String
     @Binding private var branch: String
+    private let minWidth: CGFloat
+    private let maxWidth: CGFloat
+
+    @State private var dragStartWidth: CGFloat = 0
 
     private let session: AIInspectorSession
     private let usage: AIInspectorUsage
@@ -146,6 +150,8 @@ public struct AIInspector: View {
         tab: Binding<AIInspectorTab>,
         commitMessage: Binding<String>,
         branch: Binding<String>,
+        minWidth: CGFloat = 240,
+        maxWidth: CGFloat = 480,
         session: AIInspectorSession,
         usage: AIInspectorUsage,
         todos: [AITodoItem] = [],
@@ -172,6 +178,8 @@ public struct AIInspector: View {
         self._tab = tab
         self._commitMessage = commitMessage
         self._branch = branch
+        self.minWidth = minWidth
+        self.maxWidth = maxWidth
         self.session = session
         self.usage = usage
         self.todos = todos
@@ -203,7 +211,9 @@ public struct AIInspector: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .background(palette.background)
+        .background(
+            ShadcnTranslucentFill(color: palette.background, cornerRadius: 0)
+        )
     }
 
     // MARK: Open state
@@ -221,7 +231,25 @@ public struct AIInspector: View {
         .frame(width: width)
         .frame(maxHeight: .infinity)
         .overlay(alignment: .leading) {
-            Rectangle().fill(palette.border).frame(width: 1)
+            // The doc comment promises "resizable"; this is the drag
+            // surface that actually writes `width` — 0.3.0 shipped the
+            // binding read-only from the component's side.
+            Rectangle()
+                .fill(palette.border)
+                .frame(width: 4)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if dragStartWidth == 0 { dragStartWidth = width }
+                            let proposed = dragStartWidth - value.translation.width
+                            width = min(max(proposed, minWidth), maxWidth)
+                        }
+                        .onEnded { _ in dragStartWidth = 0 }
+                )
+                .onTapGesture(count: 2) { width = minWidth }
+                .help("Drag to resize · double-click to reset")
+                .accessibilityLabel("Resize inspector")
         }
     }
 
