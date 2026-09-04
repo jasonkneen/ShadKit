@@ -40,6 +40,48 @@ struct ShadcnOverlayKey: PreferenceKey {
     }
 }
 
+/// A dialog, unlike a menu/select/popover, isn't anchored to a trigger — it
+/// centers over the whole host — so it needs no `Anchor<CGRect>` and rides a
+/// separate preference list drawn above every anchored item.
+struct ShadcnDialogItem: Identifiable {
+    let id: UUID
+    let width: CGFloat
+    let onDismiss: () -> Void
+    let content: AnyView
+}
+
+struct ShadcnDialogKey: PreferenceKey {
+    static let defaultValue: [ShadcnDialogItem] = []
+
+    static func reduce(
+        value: inout [ShadcnDialogItem],
+        nextValue: () -> [ShadcnDialogItem]
+    ) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+extension View {
+    /// Presents `content` as a scrimmed dialog centered over the root of the
+    /// themed subtree — outside any ancestor's rounded frame or clip, unlike
+    /// a plain `.overlay`, which a composer's own clipped chrome cuts off.
+    func shadcnDialogOverlay<Content: View>(
+        id: UUID,
+        isPresented: Bool,
+        width: CGFloat,
+        onDismiss: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let dialog = content()
+        return preference(
+            key: ShadcnDialogKey.self,
+            value: isPresented
+                ? [ShadcnDialogItem(id: id, width: width, onDismiss: onDismiss, content: AnyView(dialog))]
+                : []
+        )
+    }
+}
+
 extension View {
     /// Presents `content` anchored to this view but *drawn at the root of the
     /// themed subtree*.
@@ -135,6 +177,45 @@ public enum ShadcnOverlayPlacement {
         }
         return result
     }
+
+    /// Full placement: flips the preferred edge when it would overflow the
+    /// host and the opposite edge fits, then shifts/clamps to stay inside the
+    /// host on both axes. Pure and host-size aware, so it holds for any panel
+    /// large enough to reach a pane or window boundary — not just the
+    /// original narrow menus `origin`/`clamped` were sized for.
+    ///
+    /// Falls back to `origin` + `clamped` (no flip) when `contentHeight` is
+    /// unknown, since flipping needs the panel's height to know whether the
+    /// opposite side actually has room.
+    public static func resolved(
+        trigger: CGRect,
+        edge: VerticalEdge,
+        alignment: HorizontalAlignment,
+        gap: CGFloat,
+        contentWidth: CGFloat?,
+        contentHeight: CGFloat?,
+        in host: CGSize
+    ) -> CGPoint {
+        var resolvedEdge = edge
+        if let contentHeight, host.height > 0 {
+            let fitsBelow = trigger.maxY + gap + contentHeight <= host.height
+            let fitsAbove = trigger.minY - gap - contentHeight >= 0
+            switch edge {
+            case .bottom where !fitsBelow && fitsAbove: resolvedEdge = .top
+            case .top where !fitsAbove && fitsBelow: resolvedEdge = .bottom
+            default: break
+            }
+        }
+        let base = origin(
+            trigger: trigger,
+            edge: resolvedEdge,
+            alignment: alignment,
+            gap: gap,
+            contentHeight: contentHeight,
+            contentWidth: contentWidth
+        )
+        return clamped(base, contentWidth: contentWidth, contentHeight: contentHeight, in: host)
+    }
 }
 
 /// Draws whatever the subtree published, above everything else.
@@ -157,7 +238,17 @@ struct ShadcnOverlayHost: ViewModifier {
     var glassEnabled: Bool = true
 
     func body(content: Content) -> some View {
-        content.overlayPreferenceValue(ShadcnOverlayKey.self) { items in
+        content
+            .overlayPreferenceValue(ShadcnOverlayKey.self) { items in
+                menuLayer(items: items)
+            }
+            .overlayPreferenceValue(ShadcnDialogKey.self) { dialogs in
+                dialogLayer(dialogs: dialogs)
+            }
+    }
+
+    @ViewBuilder
+    private func menuLayer(items: [ShadcnOverlayItem]) -> some View {
             GeometryReader { proxy in
                 ZStack(alignment: .topLeading) {
                     // Full-host dismiss layer — not part of the panel's own
@@ -175,15 +266,11 @@ struct ShadcnOverlayHost: ViewModifier {
 
                     ForEach(items) { item in
                         let frame = proxy[item.anchor]
-                        let origin = ShadcnOverlayPlacement.clamped(
-                            ShadcnOverlayPlacement.origin(
-                                trigger: frame,
-                                edge: item.edge,
-                                alignment: item.alignment,
-                                gap: item.gap,
-                                contentHeight: item.contentHeight,
-                                contentWidth: item.contentWidth
-                            ),
+                        let origin = ShadcnOverlayPlacement.resolved(
+                            trigger: frame,
+                            edge: item.edge,
+                            alignment: item.alignment,
+                            gap: item.gap,
                             contentWidth: item.contentWidth,
                             contentHeight: item.contentHeight,
                             in: proxy.size
@@ -220,6 +307,33 @@ struct ShadcnOverlayHost: ViewModifier {
             }
             // The host itself must never intercept input when nothing is open.
             .allowsHitTesting(!items.isEmpty)
+    }
+
+    /// Dialogs sit above menus/selects/popovers (`zIndex` on the outer
+    /// `overlayPreferenceValue` chain draws later modifiers on top), centered
+    /// on the host with a full-bleed scrim, matching the prior in-place
+    /// dialog's `Color.black.opacity(0.5)` treatment.
+    @ViewBuilder
+    private func dialogLayer(dialogs: [ShadcnDialogItem]) -> some View {
+        ZStack {
+            ForEach(dialogs) { item in
+                ZStack {
+                    Color.black.opacity(0.5)
+                        .ignoresSafeArea()
+                        .onTapGesture(perform: item.onDismiss)
+
+                    item.content
+                        .environment(\.shadcnTheme, theme)
+                        .environment(\.shadcnPalette, palette)
+                        .environment(\.shadcnSurfaceOpacity, surfaceOpacity)
+                        .environment(\.shadcnGlassEnabled, glassEnabled)
+                        .environment(\.colorScheme, colorScheme)
+                        .frame(width: item.width)
+                        .fixedSize()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
         }
+        .allowsHitTesting(!dialogs.isEmpty)
     }
 }

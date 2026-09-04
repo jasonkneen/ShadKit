@@ -145,4 +145,58 @@ final class OverlayPlacementTests: XCTestCase {
             in: CGSize(width: 400, height: 300))
         XCTAssertEqual(unknown.x, 380, "unknown width is left alone")
     }
+
+    // MARK: - resolved (flip + shift, U19)
+
+    func testResolvedFlipsToTopWhenBottomWouldOverflowTheHost() {
+        // Trigger near the bottom of a 300pt-tall host; a 120pt panel opening
+        // .bottom would spill 52pt past the host, but it fits fully above.
+        let trigger = CGRect(x: 20, y: 260, width: 100, height: 20)
+        let origin = ShadcnOverlayPlacement.resolved(
+            trigger: trigger, edge: .bottom, alignment: .leading, gap: 4,
+            contentWidth: 200, contentHeight: 120, in: CGSize(width: 400, height: 300))
+        XCTAssertEqual(origin.y, trigger.minY - 4 - 120, "flipped above the trigger")
+    }
+
+    func testResolvedFlipsToBottomWhenTopWouldOverflowTheHost() {
+        // Trigger near the top; a 120pt panel opening .top would go negative,
+        // but it fits fully below.
+        let trigger = CGRect(x: 20, y: 10, width: 100, height: 20)
+        let origin = ShadcnOverlayPlacement.resolved(
+            trigger: trigger, edge: .top, alignment: .leading, gap: 4,
+            contentWidth: 200, contentHeight: 120, in: CGSize(width: 400, height: 300))
+        XCTAssertEqual(origin.y, trigger.maxY + 4, "flipped below the trigger")
+    }
+
+    func testResolvedKeepsThePreferredEdgeWhenNeitherSideFits() {
+        // A panel taller than the host fits nowhere; keep the preferred edge
+        // and let the final clamp pull it back on-screen rather than thrash.
+        let trigger = CGRect(x: 20, y: 150, width: 100, height: 20)
+        let origin = ShadcnOverlayPlacement.resolved(
+            trigger: trigger, edge: .bottom, alignment: .leading, gap: 4,
+            contentWidth: 200, contentHeight: 400, in: CGSize(width: 400, height: 300))
+        XCTAssertEqual(origin.y, 0, "clamped to the host's top rather than off-screen")
+    }
+
+    func testResolvedShiftsPastTheTrailingEdgeInsteadOfClipping() {
+        // Trailing-aligned select whose trigger sits right against the
+        // host's right edge, so the panel's natural trailing-pinned origin
+        // (trigger.maxX - width) overshoots past the host.
+        let trigger = CGRect(x: 390, y: 20, width: 40, height: 28)
+        let origin = ShadcnOverlayPlacement.resolved(
+            trigger: trigger, edge: .bottom, alignment: .trailing, gap: 4,
+            contentWidth: 220, contentHeight: 100, in: CGSize(width: 400, height: 300))
+        XCTAssertEqual(origin.x, 400 - 220, "shifted left to stay inside the host")
+    }
+
+    func testResolvedWithoutContentHeightFallsBackToClampOnly() {
+        // No measured height: flip is skipped (there is nothing to compare
+        // against the host with), matching the pre-U19 `origin`+`clamped`
+        // behaviour custom callers still rely on.
+        let trigger = CGRect(x: 20, y: 260, width: 100, height: 20)
+        let origin = ShadcnOverlayPlacement.resolved(
+            trigger: trigger, edge: .bottom, alignment: .leading, gap: 4,
+            contentWidth: nil, contentHeight: nil, in: CGSize(width: 400, height: 300))
+        XCTAssertEqual(origin.y, trigger.maxY + 4, "not flipped without a known height")
+    }
 }

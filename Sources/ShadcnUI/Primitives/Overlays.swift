@@ -678,9 +678,6 @@ public struct ShadcnHoverCard<Trigger: View, Content: View>: View {
     private let trigger: Trigger
     private let content: Content
 
-    @State private var isHovering = false
-    @State private var isVisible = false
-
     public init(
         width: CGFloat = 256,
         @ViewBuilder trigger: () -> Trigger,
@@ -691,29 +688,16 @@ public struct ShadcnHoverCard<Trigger: View, Content: View>: View {
         self.content = content()
     }
 
+    /// Routed through `shadcnHoverOverlay` (root-hosted, flip/shift-aware) so
+    /// a hover card near a clipped ancestor's edge — a rounded panel host, a
+    /// scrollable pane — no longer gets silently cut off, matching every
+    /// other floating primitive here. Centered above the trigger by default,
+    /// same as the previous plain-`.overlay(alignment: .top)` placement.
     public var body: some View {
         trigger
-            .onHover { hovering in
-                isHovering = hovering
-                if hovering {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        if isHovering { withAnimation(.easeOut(duration: 0.15)) { isVisible = true } }
-                    }
-                } else {
-                    withAnimation(.easeOut(duration: 0.12)) { isVisible = false }
-                }
+            .shadcnHoverOverlay(width: width, edge: .top, alignment: .center) {
+                content
             }
-            .overlay(alignment: .top) {
-                if isVisible {
-                    ShadcnPanel(padding: Space.x4) { content }
-                        .frame(width: width)
-                        .fixedSize()
-                        .offset(y: -8)
-                        .alignmentGuide(.top) { $0[.bottom] }
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                }
-            }
-            .zIndex(isVisible ? 900 : 0)
     }
 }
 
@@ -810,54 +794,76 @@ extension View {
 
 /// Radix `Dialog` — a `bg-black/50` scrim over a
 /// `rounded-lg border bg-background p-6 shadow-lg` panel.
+///
+/// Drawn via `shadcnDialogOverlay` at the root of the themed subtree, like
+/// every other floating primitive here — a plain `.overlay` is clipped by
+/// whatever rounded/clipped ancestor frame the trigger happens to sit inside
+/// (a composer footer, a scrollable pane), which cut the panel off before
+/// this routed through the host.
 struct ShadcnDialogModifier<DialogContent: View>: ViewModifier {
     @Binding var isPresented: Bool
     let width: CGFloat
     let dialogContent: DialogContent
 
-    @Environment(\.shadcnPalette) private var palette
-    @Environment(\.shadcnTheme) private var theme
+    /// Stable while this control lives — never regenerated on layout.
+    @State private var overlayID = UUID()
 
     func body(content: Content) -> some View {
         content
-            .overlay {
-                if isPresented {
-                    ZStack {
-                        Color.black.opacity(0.5)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                withAnimation(.easeOut(duration: 0.15)) { isPresented = false }
-                            }
-
-                        VStack(alignment: .leading, spacing: Space.x4) {
-                            dialogContent
-                        }
-                        .padding(Space.x6)
-                        .frame(width: width)
-                        .background(
-                            ShadcnTranslucentFill(
-                                color: palette.background,
-                                cornerRadius: theme.radius.lg,
-                                material: .regularMaterial)
-                        )
-                        .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
-                        .shadcnShadow(.lg)
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
-
-                        // Escape dismisses. A hidden button carrying the
-                        // window-level shortcut, not `.onKeyPress`, since the
-                        // scrim never holds keyboard focus itself.
-                        Button("") {
-                            withAnimation(.easeOut(duration: 0.15)) { isPresented = false }
-                        }
-                        .keyboardShortcut(.cancelAction)
-                        .opacity(0)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                    }
-                    .zIndex(1000)
+            .shadcnDialogOverlay(
+                id: overlayID,
+                isPresented: isPresented,
+                width: width,
+                onDismiss: { withAnimation(.easeOut(duration: 0.15)) { isPresented = false } }
+            ) {
+                ShadcnDialogPanel(isPresented: $isPresented) {
+                    dialogContent
                 }
             }
+    }
+}
+
+/// The panel's own chrome plus the escape-to-dismiss shortcut. Reads
+/// `palette`/`theme` from the environment injected by the host (not the
+/// caller's local subtree), matching every other panel drawn there.
+private struct ShadcnDialogPanel<Content: View>: View {
+    @Binding var isPresented: Bool
+    let content: Content
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+
+    init(isPresented: Binding<Bool>, @ViewBuilder content: () -> Content) {
+        self._isPresented = isPresented
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack {
+            VStack(alignment: .leading, spacing: Space.x4) {
+                content
+            }
+            .padding(Space.x6)
+            .background(
+                ShadcnTranslucentFill(
+                    color: palette.background,
+                    cornerRadius: theme.radius.lg,
+                    material: .regularMaterial)
+            )
+            .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
+            .shadcnShadow(.lg)
+
+            // Escape dismisses. A hidden button carrying the window-level
+            // shortcut, not `.onKeyPress`, since the scrim never holds
+            // keyboard focus itself.
+            Button("") {
+                withAnimation(.easeOut(duration: 0.15)) { isPresented = false }
+            }
+            .keyboardShortcut(.cancelAction)
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 }
 

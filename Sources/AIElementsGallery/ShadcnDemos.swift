@@ -376,6 +376,16 @@ struct OverlaysDemo: View {
     @State private var workspacePickerPresented = false
     @State private var currentWorkspace = AIWorkspaceEntry(name: "ShadKit", path: "/Users/dev/ShadKit", isGit: true)
 
+    // Clipped-pane regression demo (U19): every one of these opens from a
+    // trigger sitting inside a 420×300 `.clipped()` pane, near its trailing
+    // and bottom edges — the exact shape of the two consumer bugs (a dialog
+    // clipped by a composer's rounded frame; a select clipped at a window
+    // edge) that motivated routing every floating primitive through the
+    // root overlay host.
+    @State private var clippedSelectValue: String?
+    @State private var clippedMenuOpen = false
+    @State private var clippedDialogOpen = false
+
     private static let commandGroups: [ShadcnCommandGroup] = [
         ShadcnCommandGroup(
             id: "actions",
@@ -436,6 +446,15 @@ struct OverlaysDemo: View {
 
         GalleryBlock("Dialog") {
             ShadcnButton("Open dialog", variant: .outline) { showDialog = true }
+                .shadcnDialog(isPresented: $showDialog) {
+                    ShadcnCardTitle("Are you sure?")
+                    ShadcnCardDescription("This action cannot be undone.")
+                    HStack {
+                        Spacer()
+                        ShadcnButton("Cancel", variant: .outline) { showDialog = false }
+                        ShadcnButton("Confirm", variant: .primary) { showDialog = false }
+                    }
+                }
         }
 
         GalleryBlock("Resize split") {
@@ -520,6 +539,76 @@ struct OverlaysDemo: View {
                 onChoose: { _ in },
                 onBrowse: { _ in }
             )
+        }
+
+        GalleryBlock("Clipped pane — nothing clips (U19)") {
+            VStack(alignment: .leading, spacing: Space.x2) {
+                Text("A 420×300 `.clipped()` pane with a composer footer at the bottom-right. Every trigger below sits against the pane's trailing/bottom edges — open each; the panel/dialog must land fully outside this box, never cut off.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+
+                ZStack(alignment: .bottomTrailing) {
+                    Color.clear
+                    VStack(alignment: .trailing, spacing: Space.x2) {
+                        Text("Composer footer")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: Space.x2) {
+                            ShadcnSelect(
+                                "Model",
+                                selection: $clippedSelectValue,
+                                isCompact: true,
+                                triggerStyle: .labelOnly,
+                                edge: .top,
+                                options: [
+                                    (value: "opus", label: "Claude Opus"),
+                                    (value: "sonnet", label: "Claude Sonnet"),
+                                    (value: "haiku", label: "Claude Haiku"),
+                                ]
+                            )
+
+                            ShadcnDropdownMenu(
+                                isPresented: $clippedMenuOpen,
+                                edge: .top
+                            ) {
+                                ShadcnButton(icon: ShadcnIcon.dotsHorizontal, variant: .ghost, size: .iconSM) {
+                                    clippedMenuOpen.toggle()
+                                }
+                            } content: {
+                                ShadcnMenuItem("Duplicate", systemImage: "doc.on.doc") {}
+                                ShadcnMenuItem("Delete", systemImage: "trash", isDestructive: true) {}
+                            }
+
+                            ShadcnHoverCard {
+                                ShadcnButton(icon: ShadcnIcon.info, variant: .ghost, size: .iconSM) {}
+                            } content: {
+                                Text("Hover card content that must render outside the clipped pane.")
+                                    .font(.system(size: 11))
+                            }
+
+                            ShadcnButton(icon: ShadcnIcon.copy, variant: .ghost, size: .iconSM) {}
+                                .shadcnTooltip("Copy", edge: .top)
+
+                            ShadcnButton("Delete chat", variant: .destructive, size: .small) {
+                                clippedDialogOpen = true
+                            }
+                            .shadcnDialog(isPresented: $clippedDialogOpen) {
+                                ShadcnCardTitle("Delete this chat?")
+                                ShadcnCardDescription("This action cannot be undone.")
+                                HStack {
+                                    Spacer()
+                                    ShadcnButton("Cancel", variant: .outline) { clippedDialogOpen = false }
+                                    ShadcnButton("Delete", variant: .destructive) { clippedDialogOpen = false }
+                                }
+                            }
+                        }
+                    }
+                    .padding(Space.x3)
+                }
+                .frame(width: 420, height: 300)
+                .shadcnBorderedBox()
+                .clipped()
+            }
         }
     }
 }
