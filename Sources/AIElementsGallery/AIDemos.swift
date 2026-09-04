@@ -596,6 +596,20 @@ struct WorkflowDemo: View {
             .frame(maxWidth: 620)
         }
 
+        GalleryBlock("Confirmation — flat decisions") {
+            AIConfirmation(
+                message: "Allow **run_tests** to execute `swift test` in this workspace?",
+                state: .approvalRequested,
+                actor: "claude",
+                tool: "run_tests",
+                onApproveScoped: { _ in },
+                availableScopes: [.once, .session, .always],
+                presentation: .flatDecisions,
+                requestPayloadJSON: "{\"command\": \"swift test\", \"cwd\": \"/Users/jkneen/ShadKit\"}"
+            )
+            .frame(maxWidth: 620)
+        }
+
         GalleryBlock("Question form") {
             AIQuestionForm(
                 Self.questions,

@@ -317,6 +317,18 @@ struct AIQuestionRow: View {
 ///
 /// Renders nothing until the tool has actually asked, matching the original's
 /// early return on the streaming states.
+/// How `AIConfirmation` presents its pending decision.
+public enum AIConfirmationPresentation: Sendable {
+    /// Deny + Approve, with a scope dropdown when `onApproveScoped` is set.
+    /// Matches 0.3.x layout exactly.
+    case dropdown
+    /// A row of flat buttons — one per `availableScopes` entry, calling
+    /// `onApproveScoped` — plus Deny. No dropdown, no plain Approve button,
+    /// no cancel button (cancellation is the caller's broker's job, not this
+    /// view's). Requires `onApproveScoped`.
+    case flatDecisions
+}
+
 public struct AIConfirmation: View {
     private let message: String
     private let state: AIToolState
@@ -333,6 +345,10 @@ public struct AIConfirmation: View {
     /// — pass a narrower set when the caller's broker won't accept all
     /// three, so the menu never presents an option it will reject.
     private let availableScopes: Set<AIApprovalScope>
+    private let presentation: AIConfirmationPresentation
+    /// JSON shown via `AIToolInput` above the decision row — the request
+    /// payload the caller is being asked to approve.
+    private let requestPayloadJSON: String?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -349,7 +365,9 @@ public struct AIConfirmation: View {
         onApprove: @escaping () -> Void = {},
         onDeny: @escaping () -> Void = {},
         onApproveScoped: ((AIApprovalScope) -> Void)? = nil,
-        availableScopes: Set<AIApprovalScope> = Set(AIApprovalScope.allCases)
+        availableScopes: Set<AIApprovalScope> = Set(AIApprovalScope.allCases),
+        presentation: AIConfirmationPresentation = .dropdown,
+        requestPayloadJSON: String? = nil
     ) {
         self.message = message
         self.state = state
@@ -362,6 +380,8 @@ public struct AIConfirmation: View {
         self.onDeny = onDeny
         self.onApproveScoped = onApproveScoped
         self.availableScopes = availableScopes
+        self.presentation = presentation
+        self.requestPayloadJSON = requestPayloadJSON
     }
 
     private var isPending: Bool { state == .approvalRequested }
@@ -411,7 +431,24 @@ public struct AIConfirmation: View {
                     }
                 }
 
-                if isPending {
+                if let requestPayloadJSON {
+                    AIToolInput(json: requestPayloadJSON)
+                }
+
+                if isPending, presentation == .flatDecisions, let onApproveScoped {
+                    HStack(spacing: Space.x1_5) {
+                        ForEach(
+                            AIApprovalScope.allCases.filter { availableScopes.contains($0) },
+                            id: \.self
+                        ) { scope in
+                            ShadcnButton(scope.label, variant: .outline, size: .small) {
+                                onApproveScoped(scope)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        ShadcnButton("Deny", variant: .outline, size: .small, action: onDeny)
+                    }
+                } else if isPending {
                     HStack(spacing: Space.x2) {
                         Spacer(minLength: 0)
                         ShadcnButton("Deny", variant: .outline, size: .small, action: onDeny)
