@@ -654,6 +654,47 @@ struct WorkflowDemo: View {
             agentLabel: "researcher", isInPlan: true),
     ]
 
+    /// A consumer palette derived from a low-chroma dark terminal theme
+    /// (U21): background/foreground are the theme's own colours, and
+    /// `muted`/`mutedForeground` are the background mixed 10%/62% toward
+    /// foreground — the exact shape that made `AITodoRow`'s completed-row
+    /// text (`mutedForeground` on a `muted`/`card` fill) grey-on-grey.
+    static let terminalLowChromaPalette: ShadcnPalette = ShadcnPaletteSpec(cssVars: [
+        "background": "oklch(0.22 0.01 260)",
+        "foreground": "oklch(0.85 0.01 260)",
+        "card": "oklch(0.25 0.01 260)",
+        "card-foreground": "oklch(0.85 0.01 260)",
+        "popover": "oklch(0.25 0.01 260)",
+        "popover-foreground": "oklch(0.85 0.01 260)",
+        "primary": "oklch(0.85 0.01 260)",
+        "primary-foreground": "oklch(0.22 0.01 260)",
+        "secondary": "oklch(0.283 0.01 260)",
+        "secondary-foreground": "oklch(0.85 0.01 260)",
+        // mix(background, foreground, 10%)
+        "muted": "oklch(0.283 0.01 260)",
+        // mix(background, foreground, 62%)
+        "muted-foreground": "oklch(0.611 0.01 260)",
+        "accent": "oklch(0.283 0.01 260)",
+        "accent-foreground": "oklch(0.85 0.01 260)",
+        "destructive": "oklch(0.704 0.191 22.216)",
+        "border": "oklch(1 0 0 / 10%)",
+        "input": "oklch(1 0 0 / 15%)",
+        "ring": "oklch(0.556 0.01 260)",
+        "chart-1": "oklch(0.7 0.01 260)",
+        "chart-2": "oklch(0.556 0.01 260)",
+        "chart-3": "oklch(0.439 0.01 260)",
+        "chart-4": "oklch(0.371 0.01 260)",
+        "chart-5": "oklch(0.283 0.01 260)",
+        "sidebar": "oklch(0.25 0.01 260)",
+        "sidebar-foreground": "oklch(0.85 0.01 260)",
+        "sidebar-primary": "oklch(0.85 0.01 260)",
+        "sidebar-primary-foreground": "oklch(0.22 0.01 260)",
+        "sidebar-accent": "oklch(0.283 0.01 260)",
+        "sidebar-accent-foreground": "oklch(0.85 0.01 260)",
+        "sidebar-border": "oklch(1 0 0 / 10%)",
+        "sidebar-ring": "oklch(0.556 0.01 260)",
+    ]).resolved(isDark: true)
+
     private static let questions: [AIQuestion] = [
         // `allowsWriteIn: false` (0.3.1) — a strict pick-one with no
         // "Other…" field, for questions that forbid a free-text answer.
@@ -792,6 +833,31 @@ struct WorkflowDemo: View {
                 isCollapsible: true
             )
             .frame(maxWidth: 620)
+        }
+
+        GalleryBlock("Plan & todo — dark, low-chroma palette (U21)") {
+            VStack(alignment: .leading, spacing: Space.x4) {
+                Text("A consumer palette derived from a terminal theme: background/foreground come from the theme, muted/mutedForeground are the background mixed 10%/62% toward foreground. Completed rows and disabled row actions must stay legible.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+
+                AIPlan(title: "Port ShadKit", description: "Low-chroma dark palette check.") {
+                    AITodoList(
+                        [
+                            AITodoItem(title: "Convert the OKLCH token set", status: .completed),
+                            AITodoItem(title: "Port the 26 shadcn primitives", status: .inProgress, actor: "claude"),
+                            AITodoItem(title: "Port the AI Elements set", status: .pending),
+                        ],
+                        onEdit: { _ in },
+                        onDelete: { _ in },
+                        onMove: { _, _ in }
+                    )
+                } footer: {
+                    ShadcnButton("Approve plan", size: .small) {}
+                }
+                .frame(maxWidth: 620)
+                .environment(\.shadcnPalette, Self.terminalLowChromaPalette)
+            }
         }
 
         GalleryBlock("Compact model picker — 28pt trigger, per-row accessory") {

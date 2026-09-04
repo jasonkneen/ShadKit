@@ -199,6 +199,13 @@ public struct AITodoList: View {
     }
 }
 
+/// Title colour for one ``AITodoRow``. Pure, so the "never `mutedForeground`
+/// on a `muted`/`card` fill" contract (U21) is pinned by a test rather than
+/// only by reading the source.
+func aiTodoRowTitleColor(status: AITodoStatus, palette: ShadcnPalette) -> Color {
+    status == .completed ? palette.foreground.opacity(0.65) : palette.foreground
+}
+
 /// One tappable todo row, with optional edit/delete/move/assignee actions.
 struct AITodoRow: View {
     let item: AITodoItem
@@ -223,9 +230,7 @@ struct AITodoRow: View {
 
                     Text(item.title)
                         .font(theme.typography.sans(theme.typography.sm))
-                        .foregroundStyle(
-                            item.status == .completed ? palette.mutedForeground : palette.foreground
-                        )
+                        .foregroundStyle(aiTodoRowTitleColor(status: item.status, palette: palette))
                         .strikethrough(item.status == .completed)
                         .multilineTextAlignment(.leading)
                 }
@@ -275,7 +280,10 @@ struct AITodoRow: View {
     private func rowActionButton(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             ShadcnIconView(icon, size: 11)
-                .foregroundStyle(palette.mutedForeground.opacity(enabled ? 1 : 0.35))
+                // 0.35 nearly vanished on a low-chroma dark palette where
+                // `mutedForeground` is already a partial mix toward
+                // `foreground` (U21).
+                .foregroundStyle(palette.mutedForeground.opacity(enabled ? 1 : 0.6))
         }
         .buttonStyle(.shadcnBare)
         .disabled(!enabled)
