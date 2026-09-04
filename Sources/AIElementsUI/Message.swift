@@ -214,7 +214,8 @@ public struct AIMessageContent<Content: View>: View {
                 content
             }
             .font(.system(size: messageTextSize))
-            .foregroundStyle(palette.foreground)
+            // A user bubble is a `secondary` surface: its text is that fill's foreground.
+            .foregroundStyle(isUser ? palette.secondaryForeground : palette.foreground)
             .applyIf(isUser || assistantBubbleTint != nil) { view in
                 view
                     .padding(.horizontal, messageStyle.bubbleHorizontalPadding)
