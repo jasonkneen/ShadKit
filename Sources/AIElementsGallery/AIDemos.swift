@@ -639,6 +639,27 @@ struct WorkflowDemo: View {
             .frame(maxWidth: 620)
         }
 
+        GalleryBlock("Todo — edit/delete/move/assignee, collapsible") {
+            AITodoList(
+                todoItems,
+                onCycle: { id in
+                    guard let index = todoItems.firstIndex(where: { $0.id == id }) else { return }
+                    todoItems[index].status = todoItems[index].status.next
+                },
+                onEdit: { _ in },
+                onDelete: { id in todoItems.removeAll { $0.id == id } },
+                onMove: { id, direction in
+                    guard let index = todoItems.firstIndex(where: { $0.id == id }) else { return }
+                    let target = direction == .up ? index - 1 : index + 1
+                    guard todoItems.indices.contains(target) else { return }
+                    todoItems.swapAt(index, target)
+                },
+                onAssign: { _ in },
+                isCollapsible: true
+            )
+            .frame(maxWidth: 620)
+        }
+
         GalleryBlock("Checkpoint") {
             AICheckpoint(label: "Checkpoint · 14:22", tooltip: "Restore to this point") {}
                 .frame(maxWidth: 620)

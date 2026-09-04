@@ -105,18 +105,48 @@ public struct AITodoItem: Identifiable, Sendable {
     }
 }
 
+/// Direction for `AITodoList`'s `onMove` callback.
+public enum AITodoMoveDirection: Sendable {
+    case up
+    case down
+}
+
 /// AI Elements' todo panel — a plan-derived checklist whose rows cycle
 /// pending / in-progress / completed on tap, with a "N/M done" tally.
+///
+/// Edit/delete/move/assignee callbacks are all optional and additive: a row
+/// only shows the affordance for a callback the caller actually passed.
+/// `isCollapsible` adds a chevron to the summary bar that hides the rows —
+/// off by default, so the list stays fully expanded exactly as in 0.3.x.
 public struct AITodoList: View {
     private let items: [AITodoItem]
     private let onCycle: (AITodoItem.ID) -> Void
+    private let onEdit: ((AITodoItem.ID) -> Void)?
+    private let onDelete: ((AITodoItem.ID) -> Void)?
+    private let onMove: ((AITodoItem.ID, AITodoMoveDirection) -> Void)?
+    private let onAssign: ((AITodoItem.ID) -> Void)?
+    private let isCollapsible: Bool
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @State private var isExpanded = true
 
-    public init(_ items: [AITodoItem], onCycle: @escaping (AITodoItem.ID) -> Void = { _ in }) {
+    public init(
+        _ items: [AITodoItem],
+        onCycle: @escaping (AITodoItem.ID) -> Void = { _ in },
+        onEdit: ((AITodoItem.ID) -> Void)? = nil,
+        onDelete: ((AITodoItem.ID) -> Void)? = nil,
+        onMove: ((AITodoItem.ID, AITodoMoveDirection) -> Void)? = nil,
+        onAssign: ((AITodoItem.ID) -> Void)? = nil,
+        isCollapsible: Bool = false
+    ) {
         self.items = items
         self.onCycle = onCycle
+        self.onEdit = onEdit
+        self.onDelete = onDelete
+        self.onMove = onMove
+        self.onAssign = onAssign
+        self.isCollapsible = isCollapsible
     }
 
     /// Rows whose status is ``AITodoStatus/completed``.
@@ -126,55 +156,129 @@ public struct AITodoList: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: Space.x2) {
-            Text("\(Self.doneCount(items))/\(items.count) done")
-                .font(theme.typography.sans(theme.typography.xs, weight: .medium))
-                .foregroundStyle(palette.mutedForeground)
+            summaryBar
 
-            VStack(alignment: .leading, spacing: Space.x1) {
-                ForEach(items) { item in
-                    AITodoRow(item: item) { onCycle(item.id) }
+            if !isCollapsible || isExpanded {
+                VStack(alignment: .leading, spacing: Space.x1) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        AITodoRow(
+                            item: item,
+                            canMoveUp: onMove != nil && index > 0,
+                            canMoveDown: onMove != nil && index < items.count - 1,
+                            onTap: { onCycle(item.id) },
+                            onEdit: onEdit.map { fn in { fn(item.id) } },
+                            onDelete: onDelete.map { fn in { fn(item.id) } },
+                            onMoveUp: onMove.map { fn in { fn(item.id, .up) } },
+                            onMoveDown: onMove.map { fn in { fn(item.id, .down) } },
+                            onAssign: onAssign.map { fn in { fn(item.id) } }
+                        )
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private var summaryBar: some View {
+        HStack(spacing: Space.x1_5) {
+            Text("\(Self.doneCount(items))/\(items.count) done")
+                .font(theme.typography.sans(theme.typography.xs, weight: .medium))
+                .foregroundStyle(palette.mutedForeground)
+
+            if isCollapsible {
+                Spacer(minLength: 0)
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
+                } label: {
+                    ShadcnIconView(isExpanded ? ShadcnIcon.chevronUp : ShadcnIcon.chevronDown, size: 12)
+                        .foregroundStyle(palette.mutedForeground)
+                }
+                .buttonStyle(.shadcnBare)
+            }
+        }
+    }
 }
 
-/// One tappable todo row.
+/// One tappable todo row, with optional edit/delete/move/assignee actions.
 struct AITodoRow: View {
     let item: AITodoItem
+    var canMoveUp = false
+    var canMoveDown = false
     let onTap: () -> Void
+    var onEdit: (() -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
+    var onMoveUp: (() -> Void)? = nil
+    var onMoveDown: (() -> Void)? = nil
+    var onAssign: (() -> Void)? = nil
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(alignment: .top, spacing: Space.x2) {
-                ShadcnIconView(item.status.systemImage, size: 14)
-                    .foregroundStyle(item.status.iconTint ?? palette.mutedForeground)
+        HStack(alignment: .top, spacing: Space.x2) {
+            Button(action: onTap) {
+                HStack(alignment: .top, spacing: Space.x2) {
+                    ShadcnIconView(item.status.systemImage, size: 14)
+                        .foregroundStyle(item.status.iconTint ?? palette.mutedForeground)
 
-                Text(item.title)
-                    .font(theme.typography.sans(theme.typography.sm))
-                    .foregroundStyle(
-                        item.status == .completed ? palette.mutedForeground : palette.foreground
-                    )
-                    .strikethrough(item.status == .completed)
-                    .multilineTextAlignment(.leading)
-
-                Spacer(minLength: 0)
-
-                if let actor = item.actor {
-                    AITaskItemFile(actor)
+                    Text(item.title)
+                        .font(theme.typography.sans(theme.typography.sm))
+                        .foregroundStyle(
+                            item.status == .completed ? palette.mutedForeground : palette.foreground
+                        )
+                        .strikethrough(item.status == .completed)
+                        .multilineTextAlignment(.leading)
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.shadcnBare)
 
-                ForEach(item.tags, id: \.self) { tag in
-                    AITaskItemFile(tag)
+            Spacer(minLength: 0)
+
+            if let onAssign {
+                Button(action: onAssign) {
+                    if let actor = item.actor {
+                        AITaskItemFile(actor)
+                    } else {
+                        ShadcnIconView(ShadcnIcon.plus, size: 11)
+                            .foregroundStyle(palette.mutedForeground)
+                    }
+                }
+                .buttonStyle(.shadcnBare)
+            } else if let actor = item.actor {
+                AITaskItemFile(actor)
+            }
+
+            ForEach(item.tags, id: \.self) { tag in
+                AITaskItemFile(tag)
+            }
+
+            if onMoveUp != nil || onMoveDown != nil || onEdit != nil || onDelete != nil {
+                HStack(spacing: Space.x1) {
+                    if let onMoveUp {
+                        rowActionButton(ShadcnIcon.chevronUp, enabled: canMoveUp, action: onMoveUp)
+                    }
+                    if let onMoveDown {
+                        rowActionButton(ShadcnIcon.chevronDown, enabled: canMoveDown, action: onMoveDown)
+                    }
+                    if let onEdit {
+                        rowActionButton(ShadcnIcon.pencil, enabled: true, action: onEdit)
+                    }
+                    if let onDelete {
+                        rowActionButton(ShadcnIcon.trash, enabled: true, action: onDelete)
+                    }
                 }
             }
-            .contentShape(Rectangle())
+        }
+    }
+
+    private func rowActionButton(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ShadcnIconView(icon, size: 11)
+                .foregroundStyle(palette.mutedForeground.opacity(enabled ? 1 : 0.35))
         }
         .buttonStyle(.shadcnBare)
+        .disabled(!enabled)
     }
 }
 
