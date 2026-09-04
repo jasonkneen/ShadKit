@@ -273,6 +273,15 @@ struct FormsDemo: View {
                     variant: .line,
                     items: [(0, "Account"), (1, "Password"), (2, "Team")]
                 )
+                ShadcnTabs(
+                    selection: $tab,
+                    variant: .squared,
+                    items: [
+                        ShadcnTabItem(value: 0, label: "Account", icon: ShadcnIcon.house),
+                        ShadcnTabItem(value: 1, label: "Password", icon: ShadcnIcon.shield),
+                        ShadcnTabItem(value: 2, label: "Team", icon: ShadcnIcon.settings2),
+                    ]
+                )
             }
         }
     }

@@ -116,12 +116,30 @@ public enum ShadcnTabsVariant: Sendable {
     case solid
     /// Transparent container with an underline on the active tab.
     case line
+    /// Flat, squared, neutral chips for icon+label tabs (no shadow, no underline).
+    case squared
+}
+
+/// One `ShadcnTabs` entry, with an optional leading icon.
+///
+/// Additive alongside the plain `(value, label)` tuple initializer, which
+/// keeps working unchanged.
+public struct ShadcnTabItem<Value: Hashable> {
+    public let value: Value
+    public let label: String
+    public let icon: String?
+
+    public init(value: Value, label: String, icon: String? = nil) {
+        self.value = value
+        self.label = label
+        self.icon = icon
+    }
 }
 
 /// Radix `Tabs` list. Content switching is left to the caller so this works
 /// with any selection type.
 public struct ShadcnTabs<Value: Hashable>: View {
-    private let items: [(value: Value, label: String)]
+    private let items: [ShadcnTabItem<Value>]
     @Binding private var selection: Value
     private let variant: ShadcnTabsVariant
 
@@ -136,11 +154,22 @@ public struct ShadcnTabs<Value: Hashable>: View {
     ) {
         self._selection = selection
         self.variant = variant
+        self.items = items.map { ShadcnTabItem(value: $0.value, label: $0.label) }
+    }
+
+    /// Icon+label entry point, primarily for `.squared`.
+    public init(
+        selection: Binding<Value>,
+        variant: ShadcnTabsVariant = .solid,
+        items: [ShadcnTabItem<Value>]
+    ) {
+        self._selection = selection
+        self.variant = variant
         self.items = items
     }
 
     public var body: some View {
-        HStack(spacing: variant == .line ? Space.x1 : 0) {
+        HStack(spacing: variant == .line ? Space.x1 : (variant == .squared ? Space.x1 : 0)) {
             ForEach(items, id: \.value) { item in
                 tab(for: item)
             }
@@ -157,37 +186,45 @@ public struct ShadcnTabs<Value: Hashable>: View {
     }
 
     @ViewBuilder
-    private func tab(for item: (value: Value, label: String)) -> some View {
+    private func tab(for item: ShadcnTabItem<Value>) -> some View {
         let isActive = item.value == selection
 
         Button {
             withAnimation(.easeOut(duration: 0.18)) { selection = item.value }
         } label: {
-            Text(item.label)
-                .font(theme.typography.sans(theme.typography.sm, weight: .medium))
-                .foregroundStyle(isActive ? palette.foreground : palette.foreground.opacity(0.6))
-                .padding(.horizontal, Space.x2)
-                .frame(maxHeight: .infinity)
-                .background {
-                    if isActive {
-                        switch variant {
-                        case .solid:
-                            RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                                .fill(palette.background)
-                                .shadcnShadow(.sm)
+            HStack(spacing: Space.x1_5) {
+                if let icon = item.icon {
+                    ShadcnIconView(icon, size: 14)
+                }
+                Text(item.label)
+            }
+            .font(theme.typography.sans(theme.typography.sm, weight: .medium))
+            .foregroundStyle(isActive ? palette.foreground : palette.foreground.opacity(0.6))
+            .padding(.horizontal, Space.x2)
+            .frame(maxHeight: .infinity)
+            .background {
+                if isActive {
+                    switch variant {
+                    case .solid:
+                        RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
+                            .fill(palette.background)
+                            .shadcnShadow(.sm)
+                            .matchedGeometryEffect(id: "tab", in: indicator)
+                    case .line:
+                        VStack {
+                            Spacer()
+                            Rectangle()
+                                .fill(palette.foreground)
+                                .frame(height: 2)
                                 .matchedGeometryEffect(id: "tab", in: indicator)
-                        case .line:
-                            VStack {
-                                Spacer()
-                                Rectangle()
-                                    .fill(palette.foreground)
-                                    .frame(height: 2)
-                                    .matchedGeometryEffect(id: "tab", in: indicator)
-                            }
                         }
+                    case .squared:
+                        RoundedRectangle(cornerRadius: theme.radius.sm, style: .continuous)
+                            .fill(palette.muted)
                     }
                 }
-                .contentShape(Rectangle())
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.shadcnBare)
     }
