@@ -1156,7 +1156,7 @@ public struct AIModelSelector: View {
             HStack(spacing: Space.x2) {
                 ShadcnIconView(ShadcnIcon.search, size: 16)
                     .foregroundStyle(palette.mutedForeground)
-                ShadcnTextField("Search models...", text: $query)
+                ShadcnTextField("Search models...", text: $query, autofocus: true)
                     .shadcnBorder(.clear, cornerRadius: 0)
             }
             .padding(.horizontal, Space.x3)
@@ -1186,6 +1186,10 @@ public struct AIModelSelector: View {
                         }
                     }
                 }
+                // Rows fill the panel width and truncate; without this the
+                // list measured as wide as its longest name and was cut at
+                // both edges inside a fixed-width panel.
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Space.x1)
             }
             .frame(maxHeight: 320)

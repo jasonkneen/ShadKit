@@ -19,13 +19,17 @@ public struct ShadcnTextField: View {
     @Environment(\.shadcnTheme) private var theme
     @Environment(\.isEnabled) private var isEnabled
     @FocusState private var isFocused: Bool
+    /// Take focus as soon as the field appears (search fields in panels).
+    private let autofocus: Bool
 
     public init(
         _ placeholder: String,
         text: Binding<String>,
         isSecure: Bool = false,
-        onSubmit: (() -> Void)? = nil
+        onSubmit: (() -> Void)? = nil,
+        autofocus: Bool = false
     ) {
+        self.autofocus = autofocus
         self.placeholder = placeholder
         self._text = text
         self.isSecure = isSecure
@@ -60,6 +64,10 @@ public struct ShadcnTextField: View {
         .animation(.easeOut(duration: 0.12), value: isFocused)
         .contentShape(Rectangle())
         .onTapGesture { isFocused = true }
+        .onAppear {
+            guard autofocus else { return }
+            DispatchQueue.main.async { isFocused = true }
+        }
     }
 
     @ViewBuilder
