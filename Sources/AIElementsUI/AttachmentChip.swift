@@ -61,7 +61,7 @@ public struct AIAttachmentChip: View {
 
     private var borderColor: Color {
         switch state {
-        case .error: AITailwindColor.red600.opacity(0.3)
+        case .error: palette.destructive.opacity(0.3)
         case .idle: palette.border
         default: palette.border
         }
@@ -81,7 +81,7 @@ public struct AIAttachmentChip: View {
                         .font(theme.typography.sans(theme.typography.xs))
                         .foregroundStyle(
                             state == .error
-                                ? AITailwindColor.red600.opacity(0.8)
+                                ? palette.destructive.opacity(0.8)
                                 : palette.mutedForeground
                         )
                         .lineLimit(1)
@@ -100,8 +100,9 @@ public struct AIAttachmentChip: View {
         .padding(.horizontal, Space.x2)
         .padding(.vertical, Space.x1_5)
         .frame(width: 224)
-        .background(palette.card)
-        .clipShape(RoundedRectangle(cornerRadius: theme.radius.xl, style: .continuous))
+        .background(
+            ShadcnTranslucentFill(color: palette.card, cornerRadius: theme.radius.xl)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: theme.radius.xl, style: .continuous)
                 .strokeBorder(
@@ -114,7 +115,7 @@ public struct AIAttachmentChip: View {
     @ViewBuilder
     private var media: some View {
         ZStack {
-            (state == .error ? AITailwindColor.red600.opacity(0.1) : palette.muted)
+            (state == .error ? palette.destructive.opacity(0.1) : palette.muted)
                 .clipShape(RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous))
 
             switch state {
@@ -123,7 +124,7 @@ public struct AIAttachmentChip: View {
                     .controlSize(.small)
             case .error:
                 ShadcnIconView(ShadcnIcon.alertTriangle, size: 14)
-                    .foregroundStyle(AITailwindColor.red600)
+                    .foregroundStyle(palette.destructive)
             default:
                 if let image {
                     image

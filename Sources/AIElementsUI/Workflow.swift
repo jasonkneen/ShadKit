@@ -149,11 +149,22 @@ public struct AIQuestion: Identifiable, Sendable {
     public let id: String
     public let prompt: String
     public let kind: AIQuestionKind
+    /// `false` suppresses the free-text "Other…" field on `.choice` and
+    /// `.multiSelect` questions, for callers whose question forbids a
+    /// write-in answer. Defaults to `true`, matching 0.3.0's unconditional
+    /// field.
+    public let allowsWriteIn: Bool
 
-    public init(id: String = UUID().uuidString, prompt: String, kind: AIQuestionKind) {
+    public init(
+        id: String = UUID().uuidString,
+        prompt: String,
+        kind: AIQuestionKind,
+        allowsWriteIn: Bool = true
+    ) {
         self.id = id
         self.prompt = prompt
         self.kind = kind
+        self.allowsWriteIn = allowsWriteIn
     }
 }
 
@@ -259,10 +270,14 @@ struct AIQuestionRow: View {
             switch question.kind {
             case .choice(let options):
                 chips(options, allowsMultiple: false)
-                ShadcnTextField("Other…", text: $writeIn)
+                if question.allowsWriteIn {
+                    ShadcnTextField("Other…", text: $writeIn)
+                }
             case .multiSelect(let options):
                 chips(options, allowsMultiple: true)
-                ShadcnTextField("Other…", text: $writeIn)
+                if question.allowsWriteIn {
+                    ShadcnTextField("Other…", text: $writeIn)
+                }
             case .confirm:
                 chips(["Yes", "No"], allowsMultiple: false)
             case .text:
@@ -313,6 +328,11 @@ public struct AIConfirmation: View {
     private let onApprove: () -> Void
     private let onDeny: () -> Void
     private let onApproveScoped: ((AIApprovalScope) -> Void)?
+    /// Which scopes the scoped-approve dropdown offers. Defaults to every
+    /// case, matching 0.3.0's unfiltered `ForEach(AIApprovalScope.allCases)`
+    /// — pass a narrower set when the caller's broker won't accept all
+    /// three, so the menu never presents an option it will reject.
+    private let availableScopes: Set<AIApprovalScope>
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -328,7 +348,8 @@ public struct AIConfirmation: View {
         detail: String? = nil,
         onApprove: @escaping () -> Void = {},
         onDeny: @escaping () -> Void = {},
-        onApproveScoped: ((AIApprovalScope) -> Void)? = nil
+        onApproveScoped: ((AIApprovalScope) -> Void)? = nil,
+        availableScopes: Set<AIApprovalScope> = Set(AIApprovalScope.allCases)
     ) {
         self.message = message
         self.state = state
@@ -340,6 +361,7 @@ public struct AIConfirmation: View {
         self.onApprove = onApprove
         self.onDeny = onDeny
         self.onApproveScoped = onApproveScoped
+        self.availableScopes = availableScopes
     }
 
     private var isPending: Bool { state == .approvalRequested }
@@ -404,7 +426,10 @@ public struct AIConfirmation: View {
                                     isScopeMenuPresented.toggle()
                                 }
                             } content: {
-                                ForEach(AIApprovalScope.allCases, id: \.self) { scope in
+                                ForEach(
+                                    AIApprovalScope.allCases.filter { availableScopes.contains($0) },
+                                    id: \.self
+                                ) { scope in
                                     ShadcnMenuItem(scope.label) {
                                         isScopeMenuPresented = false
                                         onApproveScoped(scope)
@@ -528,8 +553,7 @@ public struct AIQueueStrip: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
-                .fill(palette.background)
+            ShadcnTranslucentFill(color: palette.background, cornerRadius: theme.radius.lg)
         )
         .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
     }
@@ -619,22 +643,33 @@ public struct AIQueueItem: Identifiable, Sendable {
     public let title: String
     public let description: String?
     public let isCompleted: Bool
-    public let isPending: Bool
+    /// `nil` (the default) resolves to `!isCompleted` via `isPending`, so a
+    /// caller that never opts in still reports a correct pending count
+    /// instead of the fixed `false` 0.3.0 shipped, which made
+    /// `AIQueueStrip.pendingCount` read zero on a visibly non-empty strip.
+    /// Pass an explicit value only when "pending" and "not yet completed"
+    /// can disagree for your model (e.g. a cancelled-but-uncompleted item).
+    public let explicitIsPending: Bool?
     public let attachments: [String]
+
+    /// `isCompleted` and `isPending` independently constructible was the
+    /// underlying design problem; this computed property is the one place
+    /// that reconciles them until a lifecycle enum replaces both.
+    public var isPending: Bool { explicitIsPending ?? !isCompleted }
 
     public init(
         id: String = UUID().uuidString,
         title: String,
         description: String? = nil,
         isCompleted: Bool = false,
-        isPending: Bool = false,
+        isPending: Bool? = nil,
         attachments: [String] = []
     ) {
         self.id = id
         self.title = title
         self.description = description
         self.isCompleted = isCompleted
-        self.isPending = isPending
+        self.explicitIsPending = isPending
         self.attachments = attachments
     }
 }
