@@ -36,6 +36,35 @@ struct PanelDemo: View {
                     .frame(width: 380, height: 520)
                     .shadcnBorderedBox()
             }
+            GalleryBlock("Deck slots") {
+                AIAssistantPanel(
+                    model: live,
+                    deckSlots: AIAssistantPanelDeckSlots(
+                        aboveTranscript: {
+                            AnyView(
+                                ShadcnBadge("Session restored", variant: .outline)
+                                    .padding(.horizontal, Space.x3)
+                                    .padding(.top, Space.x2)
+                            )
+                        },
+                        aboveComposer: {
+                            AnyView(
+                                Text("2 files changed")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, Space.x3)
+                            )
+                        },
+                        messageAccessory: { message in
+                            AnyView(
+                                AIMessageAction(systemImage: ShadcnIcon.gitBranch, tooltip: "Fork") {}
+                            )
+                        }
+                    )
+                )
+                .frame(width: 380, height: 520)
+                .shadcnBorderedBox()
+            }
         }
 
         GalleryBlock("Roster rail — reorder, working, menu") {

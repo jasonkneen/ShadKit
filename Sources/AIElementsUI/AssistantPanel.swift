@@ -773,15 +773,45 @@ extension AIAssistantPanelTopBar where Accessory == EmptyView {
 ///
 /// State is driven from outside (`AIAssistantPanelModel`) so an AppKit host can
 /// keep feeding it exactly as it fed the view it replaces.
+/// View-builder slots an `AIAssistantPanel` host can fill without owning the
+/// panel's layout. Every slot is optional and type-erased so this stays a
+/// plain value the panel can default and store.
+public struct AIAssistantPanelDeckSlots {
+    public var aboveTranscript: (() -> AnyView)?
+    public var belowTranscript: (() -> AnyView)?
+    public var aboveComposer: (() -> AnyView)?
+    /// Rendered as extra `AIMessageActions` entries for each transcript row.
+    public var messageAccessory: ((UIMessage) -> AnyView)?
+
+    public init(
+        aboveTranscript: (() -> AnyView)? = nil,
+        belowTranscript: (() -> AnyView)? = nil,
+        aboveComposer: (() -> AnyView)? = nil,
+        messageAccessory: ((UIMessage) -> AnyView)? = nil
+    ) {
+        self.aboveTranscript = aboveTranscript
+        self.belowTranscript = belowTranscript
+        self.aboveComposer = aboveComposer
+        self.messageAccessory = messageAccessory
+    }
+
+    public static var none: AIAssistantPanelDeckSlots { AIAssistantPanelDeckSlots() }
+}
+
 public struct AIAssistantPanel: View {
     @ObservedObject private var model: AIAssistantPanelModel
     let chrome: AIAssistantPanelChrome
+    let deckSlots: AIAssistantPanelDeckSlots
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnSurfaceOpacity) private var surfaceOpacity
     @Environment(\.shadcnTheme) private var theme
 
-    public init(model: AIAssistantPanelModel, showsHeader: Bool = true) {
+    public init(
+        model: AIAssistantPanelModel,
+        showsHeader: Bool = true,
+        deckSlots: AIAssistantPanelDeckSlots = .none
+    ) {
         self.model = model
         self.chrome = AIAssistantPanelChrome(
             showsHeader: showsHeader,
@@ -790,14 +820,17 @@ public struct AIAssistantPanel: View {
             rosterPresentation: .row,
             density: .standard
         )
+        self.deckSlots = deckSlots
     }
 
     public init(
         model: AIAssistantPanelModel,
-        chrome: AIAssistantPanelChrome
+        chrome: AIAssistantPanelChrome,
+        deckSlots: AIAssistantPanelDeckSlots = .none
     ) {
         self.model = model
         self.chrome = chrome
+        self.deckSlots = deckSlots
     }
 
     var rendersTopBar: Bool {
@@ -840,15 +873,21 @@ public struct AIAssistantPanel: View {
                 ShadcnSeparator()
             }
 
+            deckSlots.aboveTranscript?()
+
             transcript
                 .environment(\.aiMessageTextSize, model.messageFontSize)
                 .aiMessageStyle(messageStyle)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(0)
 
+            deckSlots.belowTranscript?()
+
             if !model.queued.isEmpty {
                 queue
             }
+
+            deckSlots.aboveComposer?()
 
             // Keep the composer fully visible — never let the transcript's
             // flexible height shove chips under a clipped bottom edge (popover
@@ -957,7 +996,10 @@ public struct AIAssistantPanel: View {
                     AIMessageView(
                         message: message,
                         onCopy: { copy($0.text) },
-                        usesAgentBubble: model.roster.count > 1)
+                        usesAgentBubble: model.roster.count > 1,
+                        accessoryActions: deckSlots.messageAccessory.map { fn in
+                            { fn(message) }
+                        })
                 }
 
                 // Above the answer they feed, matching how the assistant
@@ -979,6 +1021,8 @@ public struct AIAssistantPanel: View {
                             id: "in-flight", role: .assistant, text: streaming,
                             author: model.streamingAuthor),
                         usesAgentBubble: model.roster.count > 1)
+                    // In-flight message has no stable identity for
+                    // messageAccessory yet; skip the slot for this row.
                 } else if model.isThinking {
                     AIMessage(.assistant) {
                         HStack(spacing: Space.x2) {
