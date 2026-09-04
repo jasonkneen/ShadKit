@@ -150,6 +150,9 @@ public final class ShadcnFloatingPanelController: NSObject {
         if makesKey {
             previousKeyWindow = NSApp.keyWindow
             panel.makeKey()
+            // SwiftUI focus (`@FocusState`) only lands once the hosting view
+            // is the panel's first responder; `makeKey` alone leaves it nil.
+            panel.makeFirstResponder(hosting)
         }
 
         self.panel = panel
@@ -207,6 +210,9 @@ public final class ShadcnFloatingPanelController: NSObject {
         if makesKey {
             previousKeyWindow = NSApp.keyWindow
             panel.makeKey()
+            // SwiftUI focus (`@FocusState`) only lands once the hosting view
+            // is the panel's first responder; `makeKey` alone leaves it nil.
+            panel.makeFirstResponder(hosting)
         }
 
         self.panel = panel

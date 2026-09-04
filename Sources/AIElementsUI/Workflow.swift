@@ -1158,7 +1158,9 @@ public struct AIModelSelector: View {
                     .foregroundStyle(palette.mutedForeground)
                 ShadcnTextField("Search models...", text: $query, autofocus: true)
                     .shadcnBorder(.clear, cornerRadius: 0)
+                    .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, Space.x3)
 
             ShadcnSeparator()
@@ -1192,6 +1194,8 @@ public struct AIModelSelector: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Space.x1)
             }
+            .frame(maxWidth: .infinity)
+            .clipped()
             .frame(maxHeight: 320)
         }
         .frame(width: 420)
