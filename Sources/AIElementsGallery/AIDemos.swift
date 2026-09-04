@@ -383,6 +383,24 @@ struct ToolingDemo: View {
             .frame(maxWidth: 620)
         }
 
+        GalleryBlock("Tool call deck — grouped, expandable") {
+            AIToolCallDeck(tools: [
+                UIToolPart(
+                    type: "tool-read_file", state: .outputAvailable,
+                    input: "{\"path\": \"Foo.swift\"}", output: "{\"lines\": 42}"),
+                UIToolPart(
+                    type: "tool-read_file", state: .outputAvailable,
+                    input: "{\"path\": \"Bar.swift\"}", output: "{\"lines\": 108}"),
+                UIToolPart(
+                    type: "tool-search_codebase", state: .inputAvailable,
+                    input: "{\"query\": \"OKLCH\"}"),
+                UIToolPart(
+                    type: "tool-run_tests", state: .outputError,
+                    errorText: "Build failed: no such module 'Shiki'"),
+            ])
+            .frame(maxWidth: 620)
+        }
+
         GalleryBlock("Activity panel") {
             AIActivityPanel(
                 events: [
