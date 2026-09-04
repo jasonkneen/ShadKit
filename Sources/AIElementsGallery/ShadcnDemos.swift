@@ -284,6 +284,34 @@ struct FormsDemo: View {
                 )
             }
         }
+
+        GalleryBlock("Tabs — height & label size (U20)") {
+            VStack(alignment: .leading, spacing: Space.x4) {
+                Text("Default: 36pt / text-sm. Taller: 44pt / text-base, for UI-sized page tabs (e.g. a files pane).")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                ShadcnTabs(
+                    selection: $tab,
+                    variant: .squared,
+                    items: [
+                        ShadcnTabItem(value: 0, label: "Account", icon: ShadcnIcon.house),
+                        ShadcnTabItem(value: 1, label: "Password", icon: ShadcnIcon.shield),
+                        ShadcnTabItem(value: 2, label: "Team", icon: ShadcnIcon.settings2),
+                    ]
+                )
+                ShadcnTabs(
+                    selection: $tab,
+                    variant: .squared,
+                    height: 44,
+                    labelSize: .regular,
+                    items: [
+                        ShadcnTabItem(value: 0, label: "Account", icon: ShadcnIcon.house),
+                        ShadcnTabItem(value: 1, label: "Password", icon: ShadcnIcon.shield),
+                        ShadcnTabItem(value: 2, label: "Team", icon: ShadcnIcon.settings2),
+                    ]
+                )
+            }
+        }
     }
 }
 

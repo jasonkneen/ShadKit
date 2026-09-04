@@ -120,6 +120,31 @@ public enum ShadcnTabsVariant: Sendable {
     case squared
 }
 
+/// Label/icon scale for `ShadcnTabs`. Additive (U20) — the default matches
+/// the size every existing caller already gets.
+public enum ShadcnTabsLabelSize: Sendable {
+    /// `text-sm` label, 14pt icon — the original, unlabelled size.
+    case small
+    /// `text-base` label, 16pt icon — for a taller bar (e.g. UI-sized page tabs).
+    case regular
+
+    /// Icon size paired with this label size. Internal (not `private`) so
+    /// tests can pin it with `@testable import` without rendering a view.
+    var iconSize: CGFloat {
+        switch self {
+        case .small: 14
+        case .regular: 16
+        }
+    }
+}
+
+/// Pure default resolution for `ShadcnTabs`' `height:` parameter. Extracted
+/// so the "nil keeps the pre-U20 36pt bar" contract is pinned by a test
+/// rather than only by reading the source.
+func shadcnTabsResolvedHeight(_ height: CGFloat?) -> CGFloat {
+    height ?? 36
+}
+
 /// One `ShadcnTabs` entry, with an optional leading icon.
 ///
 /// Additive alongside the plain `(value, label)` tuple initializer, which
@@ -142,6 +167,8 @@ public struct ShadcnTabs<Value: Hashable>: View {
     private let items: [ShadcnTabItem<Value>]
     @Binding private var selection: Value
     private let variant: ShadcnTabsVariant
+    private let height: CGFloat?
+    private let labelSize: ShadcnTabsLabelSize
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -150,10 +177,14 @@ public struct ShadcnTabs<Value: Hashable>: View {
     public init(
         selection: Binding<Value>,
         variant: ShadcnTabsVariant = .solid,
+        height: CGFloat? = nil,
+        labelSize: ShadcnTabsLabelSize = .small,
         items: [(value: Value, label: String)]
     ) {
         self._selection = selection
         self.variant = variant
+        self.height = height
+        self.labelSize = labelSize
         self.items = items.map { ShadcnTabItem(value: $0.value, label: $0.label) }
     }
 
@@ -161,11 +192,24 @@ public struct ShadcnTabs<Value: Hashable>: View {
     public init(
         selection: Binding<Value>,
         variant: ShadcnTabsVariant = .solid,
+        height: CGFloat? = nil,
+        labelSize: ShadcnTabsLabelSize = .small,
         items: [ShadcnTabItem<Value>]
     ) {
         self._selection = selection
         self.variant = variant
+        self.height = height
+        self.labelSize = labelSize
         self.items = items
+    }
+
+    private var resolvedHeight: CGFloat { shadcnTabsResolvedHeight(height) }
+
+    private var labelStep: ShadcnTypography.Step {
+        switch labelSize {
+        case .small: theme.typography.sm
+        case .regular: theme.typography.base
+        }
     }
 
     public var body: some View {
@@ -175,7 +219,7 @@ public struct ShadcnTabs<Value: Hashable>: View {
             }
         }
         .padding(variant == .solid ? 3 : 0)
-        .frame(height: 36)
+        .frame(height: resolvedHeight)
         .background {
             if variant == .solid {
                 RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
@@ -194,11 +238,11 @@ public struct ShadcnTabs<Value: Hashable>: View {
         } label: {
             HStack(spacing: Space.x1_5) {
                 if let icon = item.icon {
-                    ShadcnIconView(icon, size: 14)
+                    ShadcnIconView(icon, size: labelSize.iconSize)
                 }
                 Text(item.label)
             }
-            .font(theme.typography.sans(theme.typography.sm, weight: .medium))
+            .font(theme.typography.sans(labelStep, weight: .medium))
             .foregroundStyle(isActive ? palette.foreground : palette.foreground.opacity(0.6))
             .padding(.horizontal, Space.x2)
             .frame(maxHeight: .infinity)
