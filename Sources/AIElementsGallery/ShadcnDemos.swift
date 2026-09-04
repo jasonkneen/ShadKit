@@ -1,3 +1,4 @@
+import AIElementsUI
 import ShadcnUI
 import SwiftUI
 
@@ -357,6 +358,27 @@ struct OverlaysDemo: View {
     @State private var showPopover = false
     @State private var showMenu = false
     @State private var showDialog = false
+    @State private var sidebarWidth: CGFloat = 220
+    @State private var showCommand = false
+    @State private var showSheet = false
+    @State private var workspacePickerPresented = false
+    @State private var currentWorkspace = AIWorkspaceEntry(name: "ShadKit", path: "/Users/dev/ShadKit", isGit: true)
+
+    private static let commandGroups: [ShadcnCommandGroup] = [
+        ShadcnCommandGroup(
+            id: "actions",
+            title: "Actions",
+            items: [
+                ShadcnCommandItem(id: "new", title: "New chat", icon: ShadcnIcon.plus, shortcut: "⌘N"),
+                ShadcnCommandItem(id: "search", title: "Search files", icon: ShadcnIcon.search, shortcut: "⌘K"),
+            ]
+        ),
+    ]
+
+    private static let workspaceRecents: [AIWorkspaceEntry] = [
+        AIWorkspaceEntry(name: "ShadKit", path: "/Users/dev/ShadKit", isGit: true),
+        AIWorkspaceEntry(name: "Infinitty", path: "/Users/dev/Infinitty", isGit: true),
+    ]
 
     var body: some View {
         GalleryHeading(
@@ -402,6 +424,52 @@ struct OverlaysDemo: View {
 
         GalleryBlock("Dialog") {
             ShadcnButton("Open dialog", variant: .outline) { showDialog = true }
+        }
+
+        GalleryBlock("Resize split") {
+            ShadcnResizeSplit(width: $sidebarWidth) {
+                VStack(alignment: .leading, spacing: Space.x1) {
+                    Text("Sidebar").font(.system(size: 12, weight: .semibold))
+                    Text("Drag the handle, or ⌘B to collapse.").font(.system(size: 11))
+                }
+                .padding(Space.x3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } content: {
+                Text("Content pane")
+                    .padding(Space.x3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: 160)
+            .shadcnBorderedBox()
+        }
+
+        GalleryBlock("Command") {
+            ShadcnButton("Open command palette", variant: .outline) { showCommand = true }
+                .shadcnCommandDialog(
+                    isPresented: $showCommand,
+                    groups: Self.commandGroups
+                ) { _ in }
+        }
+
+        GalleryBlock("Sheet") {
+            ShadcnButton("Open sheet", variant: .outline) { showSheet = true }
+                .shadcnSheet(isPresented: $showSheet, edge: .trailing) {
+                    VStack(alignment: .leading, spacing: Space.x2) {
+                        Text("Sheet").font(.system(size: 13, weight: .semibold))
+                        Text("A drawer sliding in from the edge.").font(.system(size: 11))
+                    }
+                    .padding(Space.x4)
+                }
+        }
+
+        GalleryBlock("Workspace picker") {
+            AIWorkspacePicker(
+                isPresented: $workspacePickerPresented,
+                current: currentWorkspace,
+                recents: Self.workspaceRecents,
+                onChoose: { _ in },
+                onBrowse: { _ in }
+            )
         }
     }
 }

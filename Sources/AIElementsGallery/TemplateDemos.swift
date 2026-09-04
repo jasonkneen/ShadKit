@@ -60,6 +60,20 @@ struct TemplatesDemo: View {
 struct ChatbotDemo: View {
     @StateObject private var chat = AIChat(transport: GalleryTransport())
 
+    @State private var roster: [AIAssistantRosterEntry] = [
+        AIAssistantRosterEntry(id: "claude", name: "claude", detail: "Claude Opus 5", isWorking: true),
+        AIAssistantRosterEntry(id: "researcher", name: "researcher", detail: "Sub-agent"),
+    ]
+    @State private var queued: [AIQueueItem] = [
+        AIQueueItem(title: "Then check the dark palette", isPending: true),
+    ]
+    @State private var dialActiveID: AnyHashable?
+    @State private var inspectorOpen = true
+    @State private var inspectorWidth: CGFloat = 260
+    @State private var inspectorTab: AIInspectorTab = .session
+    @State private var commitMessage = ""
+    @State private var inspectorBranch = "main"
+
     var body: some View {
         GalleryHeading(
             title: "Chatbot block",
@@ -73,7 +87,34 @@ struct ChatbotDemo: View {
                     "How does OKLCH work?",
                     "Show me a tool call",
                     "What can you do?",
-                ]
+                ],
+                roster: roster,
+                onToggleAgent: { id in
+                    guard let index = roster.firstIndex(where: { $0.id == id }) else { return }
+                    roster[index] = AIAssistantRosterEntry(
+                        id: roster[index].id,
+                        name: roster[index].name,
+                        detail: roster[index].detail,
+                        isEnabled: !roster[index].isEnabled,
+                        contextFraction: roster[index].contextFraction,
+                        isWorking: roster[index].isWorking,
+                        hasMissingKey: roster[index].hasMissingKey
+                    )
+                },
+                onReorderRoster: { order in
+                    roster.sort { a, b in (order.firstIndex(of: a.id) ?? 0) < (order.firstIndex(of: b.id) ?? 0) }
+                },
+                onEditAgent: { _ in },
+                onRemoveAgent: { id in roster.removeAll { $0.id == id } },
+                queued: queued,
+                onEditQueued: { _ in },
+                onSendQueuedNow: { id in queued.removeAll { $0.id == id } },
+                onCancelQueued: { id in queued.removeAll { $0.id == id } },
+                onMoveQueued: { _, _ in },
+                showsDial: true,
+                dialActiveID: dialActiveID,
+                onDialSelect: { dialActiveID = $0 },
+                showsInspector: true
             ) { text, status in
                 AIPromptInput(
                     text: text,
@@ -84,6 +125,16 @@ struct ChatbotDemo: View {
                     AIPromptInputButton(systemImage: ShadcnIcon.plus, tooltip: "Attach") {}
                     AIPromptInputButton(systemImage: ShadcnIcon.globe, tooltip: "Search") {}
                 }
+            } inspector: {
+                AIInspector(
+                    isOpen: $inspectorOpen,
+                    width: $inspectorWidth,
+                    tab: $inspectorTab,
+                    commitMessage: $commitMessage,
+                    branch: $inspectorBranch,
+                    session: AIInspectorSession(location: "/Users/dev/ShadKit", seatCount: roster.count, isLive: true),
+                    usage: AIInspectorUsage(contextEstimate: 0.3, toolCalls: 2)
+                )
             }
             .frame(height: 560)
             .shadcnBorderedBox()

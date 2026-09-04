@@ -91,16 +91,27 @@ public struct AIAssistantRosterEntry: Identifiable, Equatable, Sendable {
     /// telemetry for it yet (e.g. it hasn't taken a turn this session) — the
     /// roster menu omits the meter rather than showing a false 0%.
     public let contextFraction: Double?
+    /// True while this agent is actively running a turn — draws the roster
+    /// row's pulse indicator.
+    public let isWorking: Bool
+    /// True when the agent is configured but its provider has no API key —
+    /// draws the roster row's missing-key badge instead of silently failing
+    /// the next turn.
+    public let hasMissingKey: Bool
 
     public init(
         id: String, name: String, detail: String, isEnabled: Bool = true,
-        contextFraction: Double? = nil
+        contextFraction: Double? = nil,
+        isWorking: Bool = false,
+        hasMissingKey: Bool = false
     ) {
         self.id = id
         self.name = name
         self.detail = detail
         self.isEnabled = isEnabled
         self.contextFraction = contextFraction
+        self.isWorking = isWorking
+        self.hasMissingKey = hasMissingKey
     }
 }
 
@@ -216,6 +227,13 @@ public final class AIAssistantPanelModel: ObservableObject {
     public var onCompactContext: ((String) -> Void)?
     /// Same as `onCompactContext`, applied to every roster agent at once.
     public var onCompactAllContext: (() -> Void)?
+    /// Roster row reordered by drag — the full new id order, host persists it.
+    public var onReorderRoster: (([String]) -> Void)?
+    /// Seat menu "Edit" — the host owns the actual editor.
+    public var onEditAgent: ((String) -> Void)?
+    /// Seat menu "Remove" — drops the agent from the roster entirely,
+    /// distinct from `onToggleAgent`'s disable-in-place.
+    public var onRemoveAgent: ((String) -> Void)?
     public var onStop: (() -> Void)?
     public var onNewChat: (() -> Void)?
     public var onSelectThread: ((String) -> Void)?
@@ -909,37 +927,14 @@ public struct AIAssistantPanel: View {
     }
 
     private var rosterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Space.x2) {
-                Text("Agents")
-                    .font(theme.typography.sans(theme.typography.xs, weight: .medium))
-                    .foregroundStyle(palette.mutedForeground)
-                ForEach(model.roster) { agent in
-                    ShadcnButton(
-                        "@\(agent.name)",
-                        variant: agent.isEnabled ? .secondary : .outline,
-                        size: .xs
-                    ) {
-                        model.toggleAgent(agent.id)
-                    }
-                    .opacity(agent.isEnabled ? 1 : 0.55)
-                    .help(
-                        agent.isEnabled
-                            ? "\(agent.detail) — click to disable"
-                            : "\(agent.detail) — disabled; click to re-enable")
-                    .accessibilityLabel(
-                        "\(agent.name), \(agent.isEnabled ? "enabled" : "disabled")")
-                }
-            }
-            .padding(
-                .horizontal,
-                chrome.density == .compact ? Space.x2 : Space.x3
-            )
-            .padding(
-                .vertical,
-                chrome.density == .compact ? Space.x1 : Space.x1_5
-            )
-        }
+        AIAssistantRosterRail(
+            entries: model.roster,
+            density: chrome.density,
+            onToggle: { model.toggleAgent($0) },
+            onReorder: model.onReorderRoster,
+            onEdit: model.onEditAgent,
+            onRemove: model.onRemoveAgent
+        )
     }
 
     // MARK: Transcript
@@ -1222,3 +1217,105 @@ public struct AIAssistantPanel: View {
 #if canImport(AppKit)
 import AppKit
 #endif
+
+/// Reusable seat rail: the same horizontal roster strip ``AIAssistantPanel``
+/// docks under its top bar, extracted so other shells (e.g. ``AIChatbot``)
+/// can compose it directly. Values in, closures out — no model dependency.
+public struct AIAssistantRosterRail: View {
+    private let entries: [AIAssistantRosterEntry]
+    private let density: AIAssistantPanelDensity
+    private let onToggle: (String) -> Void
+    private let onReorder: (([String]) -> Void)?
+    private let onEdit: ((String) -> Void)?
+    private let onRemove: ((String) -> Void)?
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+
+    public init(
+        entries: [AIAssistantRosterEntry],
+        density: AIAssistantPanelDensity = .standard,
+        onToggle: @escaping (String) -> Void = { _ in },
+        onReorder: (([String]) -> Void)? = nil,
+        onEdit: ((String) -> Void)? = nil,
+        onRemove: ((String) -> Void)? = nil
+    ) {
+        self.entries = entries
+        self.density = density
+        self.onToggle = onToggle
+        self.onReorder = onReorder
+        self.onEdit = onEdit
+        self.onRemove = onRemove
+    }
+
+    public var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Space.x2) {
+                Text("Agents")
+                    .font(theme.typography.sans(theme.typography.xs, weight: .medium))
+                    .foregroundStyle(palette.mutedForeground)
+                ForEach(Array(entries.enumerated()), id: \.element.id) { index, agent in
+                    seat(agent, index: index)
+                }
+            }
+            .padding(.horizontal, density == .compact ? Space.x2 : Space.x3)
+            .padding(.vertical, density == .compact ? Space.x1 : Space.x1_5)
+        }
+    }
+
+    private func seat(_ agent: AIAssistantRosterEntry, index: Int) -> some View {
+        ShadcnButton(
+            "@\(agent.name)",
+            variant: agent.isEnabled ? .secondary : .outline,
+            size: .xs
+        ) {
+            onToggle(agent.id)
+        }
+        .opacity(agent.isEnabled ? 1 : 0.55)
+        .overlay(alignment: .topTrailing) {
+            if agent.isWorking {
+                AILoader(size: 8)
+                    .foregroundStyle(palette.primary)
+                    .offset(x: 4, y: -4)
+                    .accessibilityLabel("Working")
+            } else if agent.hasMissingKey {
+                ShadcnIconView(ShadcnIcon.alertTriangle, size: 10)
+                    .foregroundStyle(palette.destructive)
+                    .offset(x: 4, y: -4)
+                    .accessibilityLabel("Missing API key")
+            }
+        }
+        .help(
+            agent.hasMissingKey
+                ? "\(agent.detail) — missing API key"
+                : agent.isEnabled
+                    ? "\(agent.detail) — click to disable"
+                    : "\(agent.detail) — disabled; click to re-enable")
+        .accessibilityLabel(
+            "\(agent.name), \(agent.isEnabled ? "enabled" : "disabled")"
+                + (agent.isWorking ? ", working" : "")
+                + (agent.hasMissingKey ? ", missing API key" : ""))
+        .contextMenu {
+            if index > 0, let onReorder {
+                Button("Move earlier") { move(agent.id, to: index - 1, onReorder) }
+            }
+            if index < entries.count - 1, let onReorder {
+                Button("Move later") { move(agent.id, to: index + 1, onReorder) }
+            }
+            if let onEdit {
+                Button("Edit…") { onEdit(agent.id) }
+            }
+            if let onRemove {
+                Button("Remove", role: .destructive) { onRemove(agent.id) }
+            }
+        }
+    }
+
+    private func move(_ id: String, to newIndex: Int, _ onReorder: ([String]) -> Void) {
+        var order = entries.map(\.id)
+        guard let currentIndex = order.firstIndex(of: id),
+              order.indices.contains(newIndex) else { return }
+        order.swapAt(currentIndex, newIndex)
+        onReorder(order)
+    }
+}

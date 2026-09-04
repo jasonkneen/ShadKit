@@ -20,7 +20,7 @@ carry across.
 | `AIElementsGallery` | A browsable showcase of everything |
 
 ```swift
-.package(url: "https://github.com/jasonkneen/ShadKit", from: "0.1.0")
+.package(url: "https://github.com/jasonkneen/ShadKit", from: "0.3.0")
 ```
 
 ## Design tokens
@@ -134,7 +134,7 @@ Default opacity in the standalone demo is `0.45`.
 
 ## Tests
 
-`swift test` — 205 tests, no UI harness required.
+`swift test` — 321 tests, no UI harness required.
 
 Coverage is deliberately weighted toward the four places a change looks harmless
 in review but breaks something downstream:

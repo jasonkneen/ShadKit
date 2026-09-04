@@ -1,6 +1,86 @@
 import ShadcnUI
 import SwiftUI
 
+/// How ``AIWaveform`` presents its samples.
+public enum AIWaveformMode: Sendable {
+    /// The samples are drawn once, in place — a still amplitude readout.
+    case `static`
+    /// The samples cycle past as if a live signal were arriving. Purely
+    /// decorative: there is no audio capture here, only the caller-supplied
+    /// values rotating through the visible window.
+    case scrolling
+}
+
+/// AI Elements' `LiveWaveform` — a row of amplitude bars built from
+/// caller-supplied sample values.
+///
+/// The original wires this to `AudioContext` capture; this port takes no
+/// dependency on `AVFoundation` and draws no microphone permission. A host
+/// that wants a live meter feeds it fresh `samples` on a timer of its own.
+public struct AIWaveform: View {
+    private let samples: [CGFloat]
+    private let mode: AIWaveformMode
+    private let barWidth: CGFloat
+    private let barSpacing: CGFloat
+    private let minBarHeightFraction: CGFloat
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(
+        samples: [CGFloat],
+        mode: AIWaveformMode = .static,
+        barWidth: CGFloat = 3,
+        barSpacing: CGFloat = 2,
+        minBarHeightFraction: CGFloat = 0.12
+    ) {
+        self.samples = samples
+        self.mode = mode
+        self.barWidth = barWidth
+        self.barSpacing = barSpacing
+        self.minBarHeightFraction = minBarHeightFraction
+    }
+
+    /// Rotates `samples` so index 0 lands `offset` steps in — the scrolling
+    /// illusion, expressed as a pure function so it doesn't need a view to test.
+    static func scrolled(_ samples: [CGFloat], by offset: Int) -> [CGFloat] {
+        guard !samples.isEmpty else { return samples }
+        let shift = ((offset % samples.count) + samples.count) % samples.count
+        return Array(samples[shift...] + samples[..<shift])
+    }
+
+    private var isScrolling: Bool { mode == .scrolling && !reduceMotion }
+
+    public var body: some View {
+        GeometryReader { geometry in
+            if isScrolling {
+                TimelineView(.periodic(from: .now, by: 1.0 / 12)) { context in
+                    let offset = Int(context.date.timeIntervalSinceReferenceDate * 6)
+                    bars(Self.scrolled(samples, by: offset), height: geometry.size.height)
+                }
+            } else {
+                bars(samples, height: geometry.size.height)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func bars(_ displayed: [CGFloat], height: CGFloat) -> some View {
+        HStack(alignment: .center, spacing: barSpacing) {
+            ForEach(Array(displayed.enumerated()), id: \.offset) { _, sample in
+                let clamped = min(max(sample, 0), 1)
+                RoundedRectangle(cornerRadius: barWidth / 2)
+                    .fill(palette.foreground.opacity(0.7))
+                    .frame(
+                        width: barWidth,
+                        height: max(height * minBarHeightFraction, height * clamped)
+                    )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+}
+
 /// AI Elements' `Loader` — ten spokes fading from full to 10% opacity,
 /// spinning clockwise.
 ///

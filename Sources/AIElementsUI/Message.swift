@@ -90,6 +90,70 @@ public struct AIMessage<Content: View>: View {
     }
 }
 
+/// What ``AISystemEvent`` reports. Each case maps to a glyph — seat and mode
+/// changes, a missing API key, or a bare status line.
+public enum AISystemEventKind: String, Sendable, CaseIterable {
+    case seatAdd
+    case seatRemove
+    case seatModel
+    case seatEdit
+    case modeAsk
+    case modeYolo
+    case missingKey
+    case status
+
+    var systemImage: String {
+        switch self {
+        case .seatAdd: ShadcnIcon.plus
+        case .seatRemove: ShadcnIcon.trash
+        case .seatModel: ShadcnIcon.cpu
+        case .seatEdit: ShadcnIcon.pencil
+        case .modeAsk: ShadcnIcon.shield
+        case .modeYolo: ShadcnIcon.sparkles
+        case .missingKey: ShadcnIcon.alertTriangle
+        case .status: ShadcnIcon.info
+        }
+    }
+}
+
+/// `SystemEvent` — a hairline-ruled, single-line log entry for transcript
+/// housekeeping (seat changes, mode switches, a missing key) that isn't a
+/// message from either party.
+public struct AISystemEvent: View {
+    private let text: String
+    private let kind: AISystemEventKind
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+
+    public init(_ text: String, kind: AISystemEventKind = .status) {
+        self.text = text
+        self.kind = kind
+    }
+
+    public var body: some View {
+        HStack(spacing: Space.x2) {
+            Rectangle()
+                .fill(palette.border)
+                .frame(height: 1)
+
+            HStack(spacing: Space.x1_5) {
+                ShadcnIconView(kind.systemImage, size: 12)
+                    .foregroundStyle(palette.mutedForeground)
+                Text(text)
+                    .font(theme.typography.sans(theme.typography.xs))
+                    .foregroundStyle(palette.mutedForeground)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+
+            Rectangle()
+                .fill(palette.border)
+                .frame(height: 1)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 /// `MessageContent` — a `bg-secondary` bubble for the user, bare text for the
 /// assistant.
 public struct AIMessageContent<Content: View>: View {
@@ -244,20 +308,51 @@ public struct AIMessageBranchSelector: View {
     }
 }
 
+/// One hover-revealed action on an ``AIMessageAttachment`` tile, alongside
+/// the built-in remove button.
+public struct AIMessageAttachmentAction: Identifiable {
+    public let id: String
+    public let label: String
+    public let systemImage: String
+    public let action: () -> Void
+
+    public init(
+        id: String = UUID().uuidString,
+        label: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) {
+        self.id = id
+        self.label = label
+        self.systemImage = systemImage
+        self.action = action
+    }
+}
+
 /// `MessageAttachment` — a `size-24 rounded-lg` tile with a hover-revealed
-/// remove button.
+/// remove button, optional custom actions, and a failed-upload state.
 public struct AIMessageAttachment: View {
     private let filename: String
     private let image: Image?
+    private let errorText: String?
+    private let actions: [AIMessageAttachmentAction]
     private let onRemove: (() -> Void)?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
     @State private var isHovering = false
 
-    public init(filename: String, image: Image? = nil, onRemove: (() -> Void)? = nil) {
+    public init(
+        filename: String,
+        image: Image? = nil,
+        errorText: String? = nil,
+        actions: [AIMessageAttachmentAction] = [],
+        onRemove: (() -> Void)? = nil
+    ) {
         self.filename = filename
         self.image = image
+        self.errorText = errorText
+        self.actions = actions
         self.onRemove = onRemove
     }
 
@@ -278,27 +373,59 @@ public struct AIMessageAttachment: View {
             }
             .frame(width: 96, height: 96)
             .clipShape(RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous))
+            .opacity(errorText != nil ? 0.5 : 1)
 
-            if let onRemove, isHovering {
-                ShadcnButton(icon: ShadcnIcon.xMark, variant: .ghost, size: .iconXS) {
-                    onRemove()
+            if isHovering {
+                HStack(spacing: Space.x1) {
+                    ForEach(actions) { item in
+                        ShadcnButton(icon: item.systemImage, variant: .ghost, size: .iconXS, action: item.action)
+                            .background(
+                                Circle().fill(palette.background.opacity(0.8))
+                            )
+                            .accessibilityLabel(item.label)
+                    }
+                    if let onRemove {
+                        ShadcnButton(icon: ShadcnIcon.xMark, variant: .ghost, size: .iconXS) {
+                            onRemove()
+                        }
+                        .background(
+                            Circle().fill(palette.background.opacity(0.8))
+                        )
+                        .accessibilityLabel("Remove attachment")
+                    }
                 }
-                .background(
-                    Circle().fill(palette.background.opacity(0.8))
-                )
                 .padding(Space.x2)
                 .transition(.opacity)
-                .accessibilityLabel("Remove attachment")
+            }
+
+            if errorText != nil {
+                VStack {
+                    Spacer(minLength: 0)
+                    HStack(spacing: Space.x1) {
+                        ShadcnIconView(ShadcnIcon.xCircle, size: 12)
+                        Text("Failed")
+                            .font(theme.typography.sans(theme.typography.xs, weight: .medium))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.x1)
+                    .background(AITailwindColor.red600.opacity(0.85))
+                }
+                .frame(width: 96, height: 96, alignment: .bottom)
+                .clipShape(RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous))
+                .allowsHitTesting(false)
             }
         }
         .frame(width: 96, height: 96)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
-        .shadcnTooltip(filename)
+        .shadcnTooltip(errorText ?? filename)
     }
 }
 
-/// `MessageAttachments` — right-aligned wrapping tile row.
+/// `MessageAttachments` — right-aligned wrapping tile row, the group these
+/// tiles hang in.
 public struct AIMessageAttachments<Content: View>: View {
     private let content: Content
 

@@ -88,6 +88,99 @@ public struct AIPromptInputStyle: Sendable {
     )
 }
 
+/// A header-slot row of attachment chips for the composer — pass to
+/// `AIPromptInput`'s `header:` builder. Renders each item as an
+/// ``AIAttachmentChip``: a ~224pt horizontal chip with filename, byte size
+/// and upload state, as opposed to ``AIMessageAttachment``'s 96x96 tile
+/// (which is for attachments already inline in a *sent* message).
+public struct AIPromptInputAttachments: View {
+    /// One pending attachment. `id` is the caller's own identifier — the row
+    /// only echoes it back on removal.
+    public struct Item: Identifiable {
+        public let id: String
+        public let filename: String
+        public let image: Image?
+        public let errorText: String?
+        public let actions: [AIMessageAttachmentAction]
+        /// File size in bytes, shown as the chip's description once
+        /// formatted. `nil` renders no description (unless `errorText` is set).
+        public let byteSize: Int?
+        /// Upload/processing state driving the chip's icon and border.
+        /// Defaults to `.done` — existing callers that never set this keep
+        /// rendering a finished chip.
+        public let state: AIAttachmentChipState
+
+        public init(
+            id: String = UUID().uuidString,
+            filename: String,
+            image: Image? = nil,
+            errorText: String? = nil,
+            actions: [AIMessageAttachmentAction] = [],
+            byteSize: Int? = nil,
+            state: AIAttachmentChipState = .done
+        ) {
+            self.id = id
+            self.filename = filename
+            self.image = image
+            self.errorText = errorText
+            self.actions = actions
+            self.byteSize = byteSize
+            self.state = errorText != nil ? .error : state
+        }
+    }
+
+    private let items: [Item]
+    private let onRemove: (String) -> Void
+
+    public init(items: [Item], onRemove: @escaping (String) -> Void) {
+        self.items = items
+        self.onRemove = onRemove
+    }
+
+    public var body: some View {
+        if !items.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Space.x2) {
+                    ForEach(items) { item in
+                        AIAttachmentChip(
+                            filename: item.filename,
+                            byteSize: item.byteSize,
+                            image: item.image,
+                            state: item.state,
+                            errorText: item.errorText,
+                            onRemove: { onRemove(item.id) }
+                        )
+                    }
+                }
+                .padding(.bottom, Space.x1)
+            }
+        }
+    }
+}
+
+/// A `@mention` or `/slash` trigger wired into the composer. Typing the
+/// trigger character opens a `ShadcnCommand` list (wave 1's palette shell —
+/// there is no second one here); picking an item replaces the trigger with
+/// the item's title.
+public struct AIPromptPalette {
+    public var trigger: Character
+    public var groups: [ShadcnCommandGroup]
+    public var placeholder: String
+    public var emptyText: String
+
+    public init(
+        trigger: Character,
+        groups: [ShadcnCommandGroup],
+        placeholder: String = "Type a command or search...",
+        emptyText: String = "No results found."
+    ) {
+        self.trigger = trigger
+        self.groups = groups
+        self.placeholder = placeholder
+        self.emptyText = emptyText
+    }
+}
+
 /// AI Elements' `PromptInput` — the composer.
 ///
 /// Built on shadcn's `InputGroup`: one `rounded-md border shadow-xs` shell that
@@ -105,18 +198,25 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
     private let header: Header
     private let tools: Tools
     private let trailing: Trailing
+    /// `@mention` / `/slash` triggers. Empty by default — no palette, no
+    /// behavior change for existing callers.
+    private let palettes: [AIPromptPalette]
+    private let onPaletteSelect: ((Character, ShadcnCommandItem) -> Void)?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
     @FocusState private var isFocused: Bool
+    @State private var activePalette: AIPromptPalette?
 
     public init(
         text: Binding<String>,
         placeholder: String = "What would you like to know?",
         status: AIPromptStatus = .ready,
         style: AIPromptInputStyle = .default,
+        palettes: [AIPromptPalette] = [],
         onSubmit: @escaping () -> Void,
         onStop: (() -> Void)? = nil,
+        onPaletteSelect: ((Character, ShadcnCommandItem) -> Void)? = nil,
         @ViewBuilder header: () -> Header,
         @ViewBuilder tools: () -> Tools,
         @ViewBuilder trailing: () -> Trailing
@@ -125,8 +225,10 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
         self.placeholder = placeholder
         self.status = status
         self.style = style
+        self.palettes = palettes
         self.onSubmit = onSubmit
         self.onStop = onStop
+        self.onPaletteSelect = onPaletteSelect
         self.header = header()
         self.tools = tools()
         self.trailing = trailing()
@@ -211,6 +313,40 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
         // Do NOT put `.onTapGesture` on this container: on AppKit it steals the
         // mouse-down from the NSTextView inside and the composer never focuses.
         // Focus is driven by the editor itself (and by programmatic FocusState).
+        .onChange(of: text) { _, newValue in updateActivePalette(for: newValue) }
+        .shadcnCommandDialog(
+            isPresented: isPaletteDialogPresented,
+            groups: activePalette?.groups ?? [],
+            placeholder: activePalette?.placeholder ?? "Type a command or search...",
+            emptyText: activePalette?.emptyText ?? "No results found.",
+            onSelect: { handlePaletteSelect($0) }
+        )
+    }
+
+    private var isPaletteDialogPresented: Binding<Bool> {
+        Binding(
+            get: { activePalette != nil },
+            set: { isPresented in if !isPresented { activePalette = nil } }
+        )
+    }
+
+    /// A bare trailing trigger character (`@`/`/`) opens its palette — no
+    /// mid-word matching, no caret tracking, no tiptap. Whitespace after the
+    /// trigger, or the trigger no longer being the last character, closes it.
+    private func updateActivePalette(for value: String) {
+        guard let last = value.last, let matched = palettes.first(where: { $0.trigger == last })
+        else { return }
+        activePalette = matched
+    }
+
+    private func handlePaletteSelect(_ item: ShadcnCommandItem) {
+        guard let trigger = activePalette?.trigger else { return }
+        if text.hasSuffix(String(trigger)) {
+            text.removeLast()
+        }
+        text += item.title + " "
+        onPaletteSelect?(trigger, item)
+        activePalette = nil
     }
 
     @ViewBuilder

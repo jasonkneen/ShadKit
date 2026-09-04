@@ -218,34 +218,153 @@ import AppKit
 /// an `AIChat`.
 ///
 /// This is the drop-in — hand it a chat and you have a working chat surface.
-public struct AIChatbot<Composer: View>: View {
+/// Ports `chat-view.tsx`'s shell: an optional seat rail above the transcript,
+/// an optional dial scrubber, a queue strip once turns are queued, and an
+/// optional docked inspector. Every addition is values-in — no transport, no
+/// routing, no seat policy; the host still owns all of that.
+public struct AIChatbot<Composer: View, Inspector: View>: View {
     @ObservedObject private var chat: AIChat
     private let suggestions: [String]
     private let composer: (Binding<String>, AIPromptStatus) -> Composer
+    private let inspector: () -> Inspector
+
+    private let roster: [AIAssistantRosterEntry]
+    private let onToggleAgent: (String) -> Void
+    private let onReorderRoster: (([String]) -> Void)?
+    private let onEditAgent: ((String) -> Void)?
+    private let onRemoveAgent: ((String) -> Void)?
+
+    private let queued: [AIQueueItem]
+    private let onEditQueued: (AIQueueItem.ID) -> Void
+    private let onSendQueuedNow: (AIQueueItem.ID) -> Void
+    private let onCancelQueued: (AIQueueItem.ID) -> Void
+    private let onMoveQueued: (AIQueueItem.ID, Int) -> Void
+
+    private let showsDial: Bool
+    private let dialActiveID: AnyHashable?
+    private let onDialSelect: (AnyHashable) -> Void
+
+    private let showsInspector: Bool
 
     public init(
         chat: AIChat,
         suggestions: [String] = [],
-        @ViewBuilder composer: @escaping (Binding<String>, AIPromptStatus) -> Composer
+        roster: [AIAssistantRosterEntry] = [],
+        onToggleAgent: @escaping (String) -> Void = { _ in },
+        onReorderRoster: (([String]) -> Void)? = nil,
+        onEditAgent: ((String) -> Void)? = nil,
+        onRemoveAgent: ((String) -> Void)? = nil,
+        queued: [AIQueueItem] = [],
+        onEditQueued: @escaping (AIQueueItem.ID) -> Void = { _ in },
+        onSendQueuedNow: @escaping (AIQueueItem.ID) -> Void = { _ in },
+        onCancelQueued: @escaping (AIQueueItem.ID) -> Void = { _ in },
+        onMoveQueued: @escaping (AIQueueItem.ID, Int) -> Void = { _, _ in },
+        showsDial: Bool = false,
+        dialActiveID: AnyHashable? = nil,
+        onDialSelect: @escaping (AnyHashable) -> Void = { _ in },
+        showsInspector: Bool = false,
+        @ViewBuilder composer: @escaping (Binding<String>, AIPromptStatus) -> Composer,
+        @ViewBuilder inspector: @escaping () -> Inspector = { EmptyView() }
     ) {
         self.chat = chat
         self.suggestions = suggestions
+        self.roster = roster
+        self.onToggleAgent = onToggleAgent
+        self.onReorderRoster = onReorderRoster
+        self.onEditAgent = onEditAgent
+        self.onRemoveAgent = onRemoveAgent
+        self.queued = queued
+        self.onEditQueued = onEditQueued
+        self.onSendQueuedNow = onSendQueuedNow
+        self.onCancelQueued = onCancelQueued
+        self.onMoveQueued = onMoveQueued
+        self.showsDial = showsDial
+        self.dialActiveID = dialActiveID
+        self.onDialSelect = onDialSelect
+        self.showsInspector = showsInspector
         self.composer = composer
+        self.inspector = inspector
+    }
+
+    private var dialTicks: [AIDialTick] {
+        AIDial.ticks(
+            forMessages: chat.messages.map { message in
+                (id: AnyHashable(message.id), role: message.role, preview: message.text)
+            }
+        )
     }
 
     public var body: some View {
-        VStack(spacing: Space.x4) {
-            AIConversationView(
-                chat: chat,
-                emptyState: AIConversationEmptyState(systemImage: ShadcnIcon.sparkles)
-            )
-            .frame(maxHeight: .infinity)
+        HStack(spacing: 0) {
+            shell
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            VStack(spacing: Space.x3) {
-                if !suggestions.isEmpty, chat.messages.isEmpty {
-                    AISuggestions(suggestions) { chat.sendMessage($0) }
+            if showsInspector {
+                inspector()
+            }
+        }
+    }
+
+    private var shell: some View {
+        VStack(spacing: 0) {
+            if !roster.isEmpty {
+                AIAssistantRosterRail(
+                    entries: roster,
+                    onToggle: onToggleAgent,
+                    onReorder: onReorderRoster,
+                    onEdit: onEditAgent,
+                    onRemove: onRemoveAgent
+                )
+                ShadcnSeparator()
+            }
+
+            VStack(spacing: Space.x4) {
+                if chat.messages.isEmpty {
+                    // Centered start state — matches the source's empty
+                    // conversation, before any turn has happened.
+                    Spacer(minLength: 0)
+                    AIConversationEmptyState(systemImage: ShadcnIcon.sparkles)
+                    VStack(spacing: Space.x3) {
+                        if !suggestions.isEmpty {
+                            AISuggestions(suggestions) { chat.sendMessage($0) }
+                        }
+                        composer($chat.input, chat.status.promptStatus)
+                    }
+                    .frame(maxWidth: 640)
+                    Spacer(minLength: 0)
+                } else {
+                    // The dial is a read-head for the transcript, so it rides
+                    // as an overlay on the scroller's trailing edge — stacked
+                    // underneath it, a vertical rail of hairlines would just
+                    // eat height and point at nothing.
+                    AIConversationView(
+                        chat: chat,
+                        emptyState: AIConversationEmptyState(systemImage: ShadcnIcon.sparkles)
+                    )
+                    .frame(maxHeight: .infinity)
+                    .overlay(alignment: .trailing) {
+                        if showsDial {
+                            AIDial(
+                                ticks: dialTicks,
+                                activeID: dialActiveID,
+                                side: .trailing,
+                                onSelect: onDialSelect
+                            )
+                        }
+                    }
+
+                    if !queued.isEmpty {
+                        AIQueueStrip(
+                            items: queued,
+                            onEdit: onEditQueued,
+                            onSendNow: onSendQueuedNow,
+                            onCancel: onCancelQueued,
+                            onMove: onMoveQueued
+                        )
+                    }
+
+                    composer($chat.input, chat.status.promptStatus)
                 }
-                composer($chat.input, chat.status.promptStatus)
             }
             .padding(.horizontal, Space.x4)
             .padding(.bottom, Space.x4)
@@ -253,8 +372,8 @@ public struct AIChatbot<Composer: View>: View {
     }
 }
 
-extension AIChatbot where Composer == AIPromptInput<EmptyView, EmptyView, EmptyView> {
-    /// The stock composer.
+extension AIChatbot where Composer == AIPromptInput<EmptyView, EmptyView, EmptyView>, Inspector == EmptyView {
+    /// The stock composer, no inspector docked.
     public init(chat: AIChat, suggestions: [String] = []) {
         self.init(chat: chat, suggestions: suggestions) { text, status in
             AIPromptInput(

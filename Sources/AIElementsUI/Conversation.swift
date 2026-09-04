@@ -155,6 +155,163 @@ struct AIConversationPinningState: Equatable, Sendable {
     }
 }
 
+/// One stop on ``AIDial`` — a message, turn, or other addressable point in a
+/// transcript. Major ticks draw wider and anchor a preview; minor ticks are
+/// the quiet marks between them. `isMajor` means "the human asked this".
+public struct AIDialTick: Identifiable {
+    public let id: AnyHashable
+    public let label: String
+    public let isMajor: Bool
+    /// Who to credit on the preview card's byline. Defaults to "You" for
+    /// major (human) ticks and "Assistant" otherwise.
+    public let author: String
+
+    public init(id: AnyHashable, label: String, isMajor: Bool = false, author: String? = nil) {
+        self.id = id
+        self.label = label
+        self.isMajor = isMajor
+        self.author = author ?? (isMajor ? "You" : "Assistant")
+    }
+}
+
+/// Which edge of its container ``AIDial`` pins its rail to.
+public enum AIDialSide: Sendable {
+    case leading, trailing
+}
+
+/// A vertical rail of tick marks pinned to an edge — hover or select one to
+/// jump the conversation to that point. Meant to sit as a sibling alongside a
+/// scrolling transcript (in a `ZStack`, aligned to `side`), not inline in a
+/// column of content. Generic over nothing but the tick's own `AnyHashable`
+/// id, so it drives a transcript scrubber (see ``AIDial/ticks(forMessages:)``)
+/// or any other sequence of addressable stops.
+public struct AIDial: View {
+    private let ticks: [AIDialTick]
+    private let activeID: AnyHashable?
+    private let side: AIDialSide
+    private let onSelect: (AnyHashable) -> Void
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+    @State private var hoveredID: AnyHashable?
+
+    private let railHitWidth: CGFloat = Space.step(7)
+    private let previewWidth: CGFloat = 288
+
+    public init(
+        ticks: [AIDialTick],
+        activeID: AnyHashable? = nil,
+        side: AIDialSide = .trailing,
+        onSelect: @escaping (AnyHashable) -> Void
+    ) {
+        self.ticks = ticks
+        self.activeID = activeID
+        self.side = side
+        self.onSelect = onSelect
+    }
+
+    private var previewIndex: Int? {
+        let previewID = hoveredID ?? activeID
+        return ticks.firstIndex { $0.id == previewID }
+    }
+
+    public var body: some View {
+        GeometryReader { geometry in
+            let gap = ticks.isEmpty ? geometry.size.height : geometry.size.height / CGFloat(ticks.count)
+
+            ZStack(alignment: side == .leading ? .topLeading : .topTrailing) {
+                VStack(spacing: 0) {
+                    ForEach(ticks) { tick in
+                        tickButton(tick, hitHeight: max(2, gap))
+                    }
+                }
+                .frame(width: railHitWidth)
+
+                if let previewIndex, previewIndex < ticks.count {
+                    previewCard(for: ticks[previewIndex])
+                        .offset(
+                            x: side == .leading ? railHitWidth + Space.x1 : -(previewWidth + Space.x1),
+                            y: min(
+                                max(0, gap * (CGFloat(previewIndex) + 0.5) - 32),
+                                max(0, geometry.size.height - 64)
+                            )
+                        )
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: previewIndex)
+        }
+        .frame(width: railHitWidth)
+    }
+
+    private func tickButton(_ tick: AIDialTick, hitHeight: CGFloat) -> some View {
+        let isActive = tick.id == activeID
+        let isHovered = tick.id == hoveredID
+        let isEmphasized = isActive || isHovered
+
+        return Capsule()
+            .fill(palette.foreground)
+            .opacity(isEmphasized ? 1 : (tick.isMajor ? 0.7 : 0.25))
+            .frame(
+                width: isEmphasized ? Space.step(7) : (tick.isMajor ? Space.x5 : Space.x2_5),
+                height: isEmphasized ? 2 : 1
+            )
+            .frame(width: railHitWidth, height: hitHeight, alignment: side == .leading ? .leading : .trailing)
+            .contentShape(Rectangle())
+            #if os(macOS)
+            .onHover { hovering in hoveredID = hovering ? tick.id : nil }
+            #endif
+            .onTapGesture { onSelect(tick.id) }
+            .accessibilityLabel(tick.label)
+            .animation(.easeOut(duration: 0.15), value: isEmphasized)
+    }
+
+    private func previewCard(for tick: AIDialTick) -> some View {
+        VStack(alignment: .leading, spacing: Space.x1) {
+            Text(tick.author.uppercased())
+                .font(theme.typography.sans(theme.typography.xs).smallCaps())
+                .foregroundStyle(palette.mutedForeground)
+            Text(Self.truncated(tick.label))
+                .font(theme.typography.sans(theme.typography.sm))
+                .foregroundStyle(palette.cardForeground)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Space.x3)
+        .frame(width: previewWidth, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: theme.radius.xl, style: .continuous)
+                .fill(palette.card)
+        )
+        .shadcnBorder(palette.border, cornerRadius: theme.radius.xl)
+        .shadcnShadow(.lg)
+        .allowsHitTesting(false)
+    }
+
+    private static func truncated(_ text: String, limit: Int = 180) -> String {
+        guard text.count > limit else { return text }
+        let index = text.index(text.startIndex, offsetBy: limit)
+        return String(text[..<index]) + "…"
+    }
+}
+
+extension AIDial {
+    /// Adapts a transcript into ``AIDialTick``s: user turns anchor the dial as
+    /// major stops (the moments worth jumping to), everything else fills in
+    /// as minor ticks between them.
+    public static func ticks(
+        forMessages messages: [(id: AnyHashable, role: AIMessageRole, preview: String)]
+    ) -> [AIDialTick] {
+        messages.map { message in
+            AIDialTick(
+                id: message.id,
+                label: message.preview,
+                isMajor: message.role == .user,
+                author: message.role == .user ? "You" : "Assistant"
+            )
+        }
+    }
+}
+
 /// AI Elements' `Conversation` — a scrolling log that sticks to the bottom as
 /// content streams in, with a "jump to latest" button once you scroll away.
 ///

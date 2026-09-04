@@ -16,49 +16,84 @@ public struct AICodeBlock: View {
     private let code: String
     private let language: String?
     private let showLineNumbers: Bool
+    private let isStreaming: Bool
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @Environment(\.aiCodeBlockPreviewRenderer) private var previewRenderer
     @State private var isHovering = false
     @State private var didCopy = false
+    @State private var showingPreview = false
 
-    public init(code: String, language: String? = nil, showLineNumbers: Bool = false) {
+    public init(
+        code: String,
+        language: String? = nil,
+        showLineNumbers: Bool = false,
+        isStreaming: Bool = false
+    ) {
         self.code = code
         self.language = language
         self.showLineNumbers = showLineNumbers
+        self.isStreaming = isStreaming
     }
 
     private var lines: [String] {
         code.components(separatedBy: .newlines)
     }
 
+    /// Whether the preview/source toggle may appear at all — a renderer is
+    /// injected, the language is previewable, and the fence has finished
+    /// streaming.
+    private var canPreview: Bool {
+        AICodeBlockPreview.canPreview(
+            hasRenderer: previewRenderer != nil,
+            language: language,
+            isStreaming: isStreaming
+        )
+    }
+
     public var body: some View {
         ZStack(alignment: .topTrailing) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        HStack(alignment: .top, spacing: 0) {
-                            if showLineNumbers {
-                                Text("\(index + 1)")
-                                    .font(theme.typography.mono(theme.typography.sm))
-                                    .foregroundStyle(palette.mutedForeground)
-                                    .frame(minWidth: 40, alignment: .trailing)
-                                    .padding(.trailing, Space.x4)
-                                    .textSelection(.disabled)
-                            }
-                            AISyntaxLine(line: line, language: language)
-                        }
+            Group {
+                if showingPreview, canPreview, let previewRenderer {
+                    ScrollView {
+                        previewRenderer.render(code, language ?? "")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Space.x4)
                     }
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                                HStack(alignment: .top, spacing: 0) {
+                                    if showLineNumbers {
+                                        Text("\(index + 1)")
+                                            .font(theme.typography.mono(theme.typography.sm))
+                                            .foregroundStyle(palette.mutedForeground)
+                                            .frame(minWidth: 40, alignment: .trailing)
+                                            .padding(.trailing, Space.x4)
+                                            .textSelection(.disabled)
+                                    }
+                                    AISyntaxLine(line: line, language: language)
+                                }
+                            }
+                        }
+                        .padding(Space.x4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .textSelection(.enabled)
                 }
-                .padding(Space.x4)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .textSelection(.enabled)
 
             if isHovering {
-                copyButton
-                    .padding(Space.x2)
-                    .transition(.opacity)
+                HStack(spacing: Space.x1) {
+                    if canPreview {
+                        previewToggle
+                    }
+                    copyButton
+                }
+                .padding(Space.x2)
+                .transition(.opacity)
             }
         }
         .background(
@@ -69,6 +104,20 @@ public struct AICodeBlock: View {
         .clipShape(RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous))
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
+        .onChange(of: canPreview) { _, stillCanPreview in
+            if !stillCanPreview { showingPreview = false }
+        }
+    }
+
+    private var previewToggle: some View {
+        ShadcnButton(
+            icon: showingPreview ? ShadcnIcon.terminal : ShadcnIcon.eye,
+            variant: .ghost,
+            size: .iconSM
+        ) {
+            withAnimation(.easeOut(duration: 0.12)) { showingPreview.toggle() }
+        }
+        .accessibilityLabel(showingPreview ? "Show source" : "Show preview")
     }
 
     private var copyButton: some View {
@@ -92,6 +141,68 @@ public struct AICodeBlock: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             withAnimation(.easeOut(duration: 0.12)) { didCopy = false }
         }
+    }
+}
+
+// MARK: - Preview seam (D2: no WebKit anywhere in ShadKit)
+
+/// A host-supplied renderer for `html` / `svg` fences. The host app owns the
+/// actual web view; AIElementsUI never imports WebKit.
+public protocol AICodeBlockPreviewRenderer {
+    associatedtype Body: View
+    @ViewBuilder func preview(for source: String, language: String) -> Body
+}
+
+/// Type-erased wrapper so the renderer can live in the SwiftUI environment
+/// (an associatedtype protocol cannot be stored directly).
+public struct AnyAICodeBlockPreviewRenderer {
+    let render: (String, String) -> AnyView
+
+    public init<R: AICodeBlockPreviewRenderer>(_ renderer: R) {
+        self.render = { source, language in
+            AnyView(renderer.preview(for: source, language: language))
+        }
+    }
+
+    /// Closure form, for hosts that don't want to declare a type.
+    public init(_ render: @escaping (_ source: String, _ language: String) -> AnyView) {
+        self.render = render
+    }
+}
+
+private struct AICodeBlockPreviewRendererKey: EnvironmentKey {
+    static let defaultValue: AnyAICodeBlockPreviewRenderer? = nil
+}
+
+extension EnvironmentValues {
+    public var aiCodeBlockPreviewRenderer: AnyAICodeBlockPreviewRenderer? {
+        get { self[AICodeBlockPreviewRendererKey.self] }
+        set { self[AICodeBlockPreviewRendererKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Injects the host's preview renderer. Without one, `AICodeBlock` shows no
+    /// preview toggle at all.
+    public func aiCodeBlockPreviewRenderer(_ renderer: AnyAICodeBlockPreviewRenderer?) -> some View {
+        environment(\.aiCodeBlockPreviewRenderer, renderer)
+    }
+}
+
+/// The single rule deciding whether the preview toggle may appear. Pure, so it
+/// is unit-testable without building a view.
+public enum AICodeBlockPreview {
+    /// Fences a renderer is offered for. Everything else stays source-only.
+    public static func isPreviewable(_ language: String?) -> Bool {
+        guard let language else { return false }
+        return ["html", "svg"].contains(language.lowercased())
+    }
+
+    /// A preview may show only with a renderer present, a previewable language,
+    /// and a fence that has finished streaming — a half-written document is
+    /// never rendered.
+    public static func canPreview(hasRenderer: Bool, language: String?, isStreaming: Bool) -> Bool {
+        hasRenderer && !isStreaming && isPreviewable(language)
     }
 }
 

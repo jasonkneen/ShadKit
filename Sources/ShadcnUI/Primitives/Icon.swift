@@ -61,6 +61,7 @@ public enum ShadcnIcon {
     public static let screenShare = "rectangle.on.rectangle"
     public static let camera = "camera"
     public static let bookmark = "bookmark"
+    public static let eye = "eye"
 }
 
 /// An icon sized and weighted to sit where a Lucide glyph would.

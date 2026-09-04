@@ -8,6 +8,17 @@ struct PanelDemo: View {
     @StateObject private var idle = PanelDemo.makeModel(populated: false)
     @StateObject private var live = PanelDemo.makeModel(populated: true)
 
+    @State private var inspectorOpen = true
+    @State private var inspectorWidth: CGFloat = 280
+    @State private var inspectorTab: AIInspectorTab = .session
+    @State private var commitMessage = ""
+    @State private var inspectorBranch = "main"
+    @State private var rosterEntries: [AIAssistantRosterEntry] = [
+        AIAssistantRosterEntry(id: "claude", name: "claude", detail: "Claude Opus 5", isWorking: true),
+        AIAssistantRosterEntry(id: "researcher", name: "researcher", detail: "Sub-agent", contextFraction: 0.4),
+        AIAssistantRosterEntry(id: "grok", name: "grok", detail: "Grok 4", hasMissingKey: true),
+    ]
+
     var body: some View {
         GalleryHeading(
             title: "Assistant panel",
@@ -25,6 +36,83 @@ struct PanelDemo: View {
                     .frame(width: 380, height: 520)
                     .shadcnBorderedBox()
             }
+        }
+
+        GalleryBlock("Roster rail — reorder, working, menu") {
+            AIAssistantRosterRail(
+                entries: rosterEntries,
+                onToggle: { id in
+                    guard let index = rosterEntries.firstIndex(where: { $0.id == id }) else { return }
+                    rosterEntries[index] = AIAssistantRosterEntry(
+                        id: rosterEntries[index].id,
+                        name: rosterEntries[index].name,
+                        detail: rosterEntries[index].detail,
+                        isEnabled: !rosterEntries[index].isEnabled,
+                        contextFraction: rosterEntries[index].contextFraction,
+                        isWorking: rosterEntries[index].isWorking,
+                        hasMissingKey: rosterEntries[index].hasMissingKey
+                    )
+                },
+                onReorder: { order in
+                    rosterEntries.sort { a, b in
+                        (order.firstIndex(of: a.id) ?? 0) < (order.firstIndex(of: b.id) ?? 0)
+                    }
+                },
+                onEdit: { _ in },
+                onRemove: { id in rosterEntries.removeAll { $0.id == id } }
+            )
+            .shadcnBorderedBox()
+        }
+
+        GalleryBlock("Inspector — Session / Usage / Files") {
+            // Docked the way it's meant to be used: `AIInspector` sizes
+            // itself to the width binding it's given but has no drag
+            // gesture of its own, so the handle, live resize and
+            // collapse-to-icon-rail only show up once it's the sidebar of a
+            // `ShadcnResizeSplit`.
+            ShadcnResizeSplit(width: $inspectorWidth, defaultWidth: 280, minWidth: 220, maxWidth: 420, edge: .trailing) {
+                AIInspector(
+                    isOpen: $inspectorOpen,
+                    width: $inspectorWidth,
+                    tab: $inspectorTab,
+                    commitMessage: $commitMessage,
+                    branch: $inspectorBranch,
+                    session: AIInspectorSession(
+                        location: "/Users/dev/ShadKit",
+                        sessionReference: "sess_9f2a",
+                        seatCount: rosterEntries.count,
+                        isLive: true
+                    ),
+                    usage: AIInspectorUsage(
+                        contextEstimate: 0.42,
+                        toolCalls: 6,
+                        inputTokens: 12_400,
+                        outputTokens: 3_100,
+                        cachePercent: 0.6,
+                        costText: "$0.18"
+                    ),
+                    todos: [
+                        AITodoItem(title: "Wire the inspector into the panel", status: .inProgress),
+                        AITodoItem(title: "Port the roster row", status: .completed),
+                    ],
+                    events: [AIActivityEvent(toolName: "search_codebase", duration: 0.8)],
+                    changes: [AIActivityFileChange(path: "AssistantInspector.swift", additions: 210, deletions: 0)],
+                    repo: AIInspectorRepo(folder: "ShadKit", branch: "main", ahead: 1, behind: 0)
+                )
+            } content: {
+                VStack(alignment: .leading, spacing: Space.x3) {
+                    AIMessage(.user) {
+                        Text("Which file does the OKLCH conversion live in?")
+                    }
+                    AIMessage(.assistant) {
+                        Text("It's in ShadcnPalette+OKLCH.swift — I'll pull up the diff in the Files tab.")
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(Space.x4)
+            }
+            .frame(height: 420)
+            .shadcnBorderedBox()
         }
     }
 

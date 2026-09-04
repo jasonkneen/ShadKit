@@ -113,6 +113,190 @@ extension AIPlan where Footer == EmptyView {
 
 // MARK: - Confirmation
 
+/// How long an ``AIConfirmation`` approval should stick, offered alongside
+/// the plain approve/deny decision when ``AIConfirmation/init(message:state:isApproved:actor:tool:reason:detail:onApprove:onDeny:onApproveScoped:)``
+/// is given a scoped handler.
+public enum AIApprovalScope: String, CaseIterable, Sendable {
+    case once
+    case session
+    case always
+
+    public var label: String {
+        switch self {
+        case .once: "Just once"
+        case .session: "This session"
+        case .always: "Always"
+        }
+    }
+}
+
+// MARK: - Question form
+
+/// The shape of one ``AIQuestion``'s answer control.
+public enum AIQuestionKind: Sendable {
+    /// Pick exactly one of `options`.
+    case choice([String])
+    /// Pick any number of `options`.
+    case multiSelect([String])
+    /// Yes/No.
+    case confirm
+    /// Free text only — no chips.
+    case text
+}
+
+/// One question in an ``AIQuestionForm``.
+public struct AIQuestion: Identifiable, Sendable {
+    public let id: String
+    public let prompt: String
+    public let kind: AIQuestionKind
+
+    public init(id: String = UUID().uuidString, prompt: String, kind: AIQuestionKind) {
+        self.id = id
+        self.prompt = prompt
+        self.kind = kind
+    }
+}
+
+/// AI Elements' `QuestionForm` — a stack of choice / multiselect / confirm /
+/// text questions, each with an optional chip "write-in".
+public struct AIQuestionForm: View {
+    private let questions: [AIQuestion]
+    @Binding private var selections: [String: Set<String>]
+    @Binding private var writeIns: [String: String]
+    private let onSubmit: (() -> Void)?
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+
+    public init(
+        _ questions: [AIQuestion],
+        selections: Binding<[String: Set<String>]>,
+        writeIns: Binding<[String: String]>,
+        onSubmit: (() -> Void)? = nil
+    ) {
+        self.questions = questions
+        self._selections = selections
+        self._writeIns = writeIns
+        self.onSubmit = onSubmit
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: Space.x4) {
+            ForEach(questions) { question in
+                AIQuestionRow(
+                    question: question,
+                    selection: Binding(
+                        get: { selections[question.id] ?? [] },
+                        set: { selections[question.id] = $0 }
+                    ),
+                    writeIn: Binding(
+                        get: { writeIns[question.id] ?? "" },
+                        set: { writeIns[question.id] = $0 }
+                    )
+                )
+            }
+
+            if let onSubmit {
+                HStack {
+                    Spacer(minLength: 0)
+                    ShadcnButton("Submit", variant: .primary, size: .small, action: onSubmit)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+    }
+
+    /// Folds picks and write-ins into one answer string per question,
+    /// comma-joined, with questions that ended up with no answer omitted.
+    public static func aggregate(
+        questions: [AIQuestion],
+        selections: [String: Set<String>],
+        writeIns: [String: String]
+    ) -> [String: String] {
+        var result: [String: String] = [:]
+        for question in questions {
+            var parts: [String] = []
+            let picked = selections[question.id] ?? []
+
+            switch question.kind {
+            case .choice(let options), .multiSelect(let options):
+                parts.append(contentsOf: options.filter { picked.contains($0) })
+            case .confirm:
+                if picked.contains("Yes") { parts.append("Yes") }
+                else if picked.contains("No") { parts.append("No") }
+            case .text:
+                break
+            }
+
+            if let writeIn = writeIns[question.id]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !writeIn.isEmpty {
+                parts.append(writeIn)
+            }
+
+            let joined = parts.joined(separator: ", ")
+            if !joined.isEmpty {
+                result[question.id] = joined
+            }
+        }
+        return result
+    }
+}
+
+/// One question row: prompt, chip picker (per ``AIQuestionKind``), and an
+/// optional free-text write-in.
+struct AIQuestionRow: View {
+    let question: AIQuestion
+    @Binding var selection: Set<String>
+    @Binding var writeIn: String
+
+    @Environment(\.shadcnTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.x2) {
+            Text(question.prompt)
+                .font(theme.typography.sans(theme.typography.sm, weight: .medium))
+
+            switch question.kind {
+            case .choice(let options):
+                chips(options, allowsMultiple: false)
+                ShadcnTextField("Other…", text: $writeIn)
+            case .multiSelect(let options):
+                chips(options, allowsMultiple: true)
+                ShadcnTextField("Other…", text: $writeIn)
+            case .confirm:
+                chips(["Yes", "No"], allowsMultiple: false)
+            case .text:
+                ShadcnTextField("Your answer", text: $writeIn)
+            }
+        }
+    }
+
+    private func chips(_ options: [String], allowsMultiple: Bool) -> some View {
+        ShadcnWrapLayout(spacing: Space.x2, lineSpacing: Space.x2) {
+            ForEach(options, id: \.self) { option in
+                let isSelected = selection.contains(option)
+                Button {
+                    if allowsMultiple {
+                        if isSelected { selection.remove(option) } else { selection.insert(option) }
+                    } else {
+                        selection = isSelected ? [] : [option]
+                    }
+                } label: {
+                    Text(option).padding(.horizontal, Space.x1)
+                }
+                .buttonStyle(
+                    ShadcnButtonStyle(
+                        variant: isSelected ? .primary : .outline,
+                        size: .small,
+                        cornerRadius: theme.radius.full
+                    )
+                )
+                .fixedSize()
+            }
+        }
+    }
+}
+
 /// AI Elements' `Confirmation` — the approve/deny prompt shown when a tool call
 /// needs a human decision.
 ///
@@ -122,24 +306,40 @@ public struct AIConfirmation: View {
     private let message: String
     private let state: AIToolState
     private let isApproved: Bool?
+    private let actor: String?
+    private let tool: String?
+    private let reason: String?
+    private let detail: String?
     private let onApprove: () -> Void
     private let onDeny: () -> Void
+    private let onApproveScoped: ((AIApprovalScope) -> Void)?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @State private var isScopeMenuPresented = false
 
     public init(
         message: String,
         state: AIToolState,
         isApproved: Bool? = nil,
+        actor: String? = nil,
+        tool: String? = nil,
+        reason: String? = nil,
+        detail: String? = nil,
         onApprove: @escaping () -> Void = {},
-        onDeny: @escaping () -> Void = {}
+        onDeny: @escaping () -> Void = {},
+        onApproveScoped: ((AIApprovalScope) -> Void)? = nil
     ) {
         self.message = message
         self.state = state
         self.isApproved = isApproved
+        self.actor = actor
+        self.tool = tool
+        self.reason = reason
+        self.detail = detail
         self.onApprove = onApprove
         self.onDeny = onDeny
+        self.onApproveScoped = onApproveScoped
     }
 
     private var isPending: Bool { state == .approvalRequested }
@@ -151,13 +351,69 @@ public struct AIConfirmation: View {
     public var body: some View {
         if state != .inputStreaming && state != .inputAvailable {
             ShadcnAlert {
+                if actor != nil || tool != nil {
+                    HStack(spacing: Space.x1_5) {
+                        if let actor {
+                            Text(actor)
+                                .font(theme.typography.sans(theme.typography.xs, weight: .semibold))
+                        }
+                        if let tool {
+                            AITaskItemFile(tool, systemImage: ShadcnIcon.wrench)
+                        }
+                    }
+                    .foregroundStyle(palette.mutedForeground)
+                }
+
                 ShadcnAlertDescription(message)
+
+                if let reason {
+                    Text(reason)
+                        .font(theme.typography.sans(theme.typography.xs))
+                        .foregroundStyle(palette.mutedForeground)
+                }
+
+                if let detail {
+                    ShadcnDisclosure(defaultOpen: false, spacing: Space.x1) { isOpen in
+                        HStack(spacing: Space.x1) {
+                            Text(isOpen ? "Hide detail" : "Show detail")
+                            ShadcnDisclosureChevron(isOpen: isOpen)
+                        }
+                        .font(theme.typography.sans(theme.typography.xs, weight: .medium))
+                        .foregroundStyle(palette.mutedForeground)
+                        .contentShape(Rectangle())
+                    } content: {
+                        Text(detail)
+                            .font(theme.typography.mono(theme.typography.xs))
+                            .foregroundStyle(palette.mutedForeground)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
 
                 if isPending {
                     HStack(spacing: Space.x2) {
                         Spacer(minLength: 0)
                         ShadcnButton("Deny", variant: .outline, size: .small, action: onDeny)
-                        ShadcnButton("Approve", variant: .primary, size: .small, action: onApprove)
+                        if let onApproveScoped {
+                            ShadcnDropdownMenu(isPresented: $isScopeMenuPresented, minWidth: 160) {
+                                ShadcnButton(
+                                    "Approve",
+                                    systemImage: ShadcnIcon.chevronDown,
+                                    variant: .primary,
+                                    size: .small
+                                ) {
+                                    isScopeMenuPresented.toggle()
+                                }
+                            } content: {
+                                ForEach(AIApprovalScope.allCases, id: \.self) { scope in
+                                    ShadcnMenuItem(scope.label) {
+                                        isScopeMenuPresented = false
+                                        onApproveScoped(scope)
+                                    }
+                                }
+                            }
+                        } else {
+                            ShadcnButton("Approve", variant: .primary, size: .small, action: onApprove)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 } else if isResolved, let isApproved {
@@ -218,6 +474,143 @@ public struct AICheckpoint: View {
     }
 }
 
+// MARK: - Queue strip
+
+/// AI Elements' `QueueStrip` — a collapsed one-line summary of the queue with
+/// a per-item action menu, for chat surfaces too narrow for the full
+/// ``AIQueue`` card.
+public struct AIQueueStrip: View {
+    private let items: [AIQueueItem]
+    private let onEdit: (AIQueueItem.ID) -> Void
+    private let onSendNow: (AIQueueItem.ID) -> Void
+    private let onCancel: (AIQueueItem.ID) -> Void
+    private let onMove: (AIQueueItem.ID, Int) -> Void
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+    @State private var isExpanded = false
+
+    public init(
+        items: [AIQueueItem],
+        onEdit: @escaping (AIQueueItem.ID) -> Void = { _ in },
+        onSendNow: @escaping (AIQueueItem.ID) -> Void = { _ in },
+        onCancel: @escaping (AIQueueItem.ID) -> Void = { _ in },
+        onMove: @escaping (AIQueueItem.ID, Int) -> Void = { _, _ in }
+    ) {
+        self.items = items
+        self.onEdit = onEdit
+        self.onSendNow = onSendNow
+        self.onCancel = onCancel
+        self.onMove = onMove
+    }
+
+    /// Items still waiting to run — neither completed nor already sent.
+    public static func pendingCount(_ items: [AIQueueItem]) -> Int {
+        items.filter { $0.isPending && !$0.isCompleted }.count
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        AIQueueStripRow(
+                            item: item,
+                            onEdit: { onEdit(item.id) },
+                            onSendNow: { onSendNow(item.id) },
+                            onCancel: { onCancel(item.id) },
+                            onMoveUp: index > 0 ? { onMove(item.id, index - 1) } : nil,
+                            onMoveDown: index < items.count - 1 ? { onMove(item.id, index + 1) } : nil
+                        )
+                    }
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
+                .fill(palette.background)
+        )
+        .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
+    }
+
+    private var header: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
+        } label: {
+            HStack(spacing: Space.x2) {
+                ShadcnIconView(ShadcnIcon.listTodo, size: 14)
+                Text("\(Self.pendingCount(items)) queued")
+                    .font(theme.typography.sans(theme.typography.sm, weight: .medium))
+                Spacer(minLength: 0)
+                ShadcnDisclosureChevron(isOpen: isExpanded, size: 14)
+            }
+            .foregroundStyle(palette.mutedForeground)
+            .padding(.horizontal, Space.x3)
+            .padding(.vertical, Space.x2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.shadcnBare)
+    }
+}
+
+/// One expanded row of ``AIQueueStrip``: title plus an overflow menu of
+/// edit / send now / move / cancel actions.
+struct AIQueueStripRow: View {
+    let item: AIQueueItem
+    let onEdit: () -> Void
+    let onSendNow: () -> Void
+    let onCancel: () -> Void
+    let onMoveUp: (() -> Void)?
+    let onMoveDown: (() -> Void)?
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+    @State private var isMenuPresented = false
+
+    var body: some View {
+        HStack(spacing: Space.x2) {
+            Text(item.title)
+                .font(theme.typography.sans(theme.typography.xs))
+                .foregroundStyle(palette.mutedForeground)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            ShadcnDropdownMenu(isPresented: $isMenuPresented, minWidth: 160) {
+                ShadcnButton(icon: ShadcnIcon.dotsHorizontal, variant: .ghost, size: .iconXS) {
+                    isMenuPresented.toggle()
+                }
+            } content: {
+                ShadcnMenuItem("Edit", systemImage: ShadcnIcon.pencil) {
+                    isMenuPresented = false
+                    onEdit()
+                }
+                ShadcnMenuItem("Send now", systemImage: ShadcnIcon.arrowUp) {
+                    isMenuPresented = false
+                    onSendNow()
+                }
+                if let onMoveUp {
+                    ShadcnMenuItem("Move up", systemImage: ShadcnIcon.chevronUp) {
+                        isMenuPresented = false
+                        onMoveUp()
+                    }
+                }
+                if let onMoveDown {
+                    ShadcnMenuItem("Move down", systemImage: ShadcnIcon.chevronDown) {
+                        isMenuPresented = false
+                        onMoveDown()
+                    }
+                }
+                ShadcnMenuItem("Cancel", systemImage: ShadcnIcon.xMark, isDestructive: true) {
+                    isMenuPresented = false
+                    onCancel()
+                }
+            }
+        }
+        .padding(.horizontal, Space.x3)
+        .padding(.vertical, Space.x1_5)
+    }
+}
+
 // MARK: - Queue
 
 /// One queued item.
@@ -226,6 +619,7 @@ public struct AIQueueItem: Identifiable, Sendable {
     public let title: String
     public let description: String?
     public let isCompleted: Bool
+    public let isPending: Bool
     public let attachments: [String]
 
     public init(
@@ -233,12 +627,14 @@ public struct AIQueueItem: Identifiable, Sendable {
         title: String,
         description: String? = nil,
         isCompleted: Bool = false,
+        isPending: Bool = false,
         attachments: [String] = []
     ) {
         self.id = id
         self.title = title
         self.description = description
         self.isCompleted = isCompleted
+        self.isPending = isPending
         self.attachments = attachments
     }
 }

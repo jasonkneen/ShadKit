@@ -57,6 +57,161 @@ public enum AITailwindColor {
     public static let orange600 = Color(red: 0xEA / 255, green: 0x58 / 255, blue: 0x0C / 255)
 }
 
+// MARK: - Activity panel
+
+/// One completed tool call, as tracked by an ``AIActivityPanel``.
+public struct AIActivityEvent: Identifiable, Sendable {
+    public let id: String
+    public let toolName: String
+    public let duration: TimeInterval
+    public let subagent: String?
+
+    public init(
+        id: String = UUID().uuidString,
+        toolName: String,
+        duration: TimeInterval,
+        subagent: String? = nil
+    ) {
+        self.id = id
+        self.toolName = toolName
+        self.duration = duration
+        self.subagent = subagent
+    }
+}
+
+/// One file touched during the run, as tracked by an ``AIActivityPanel``.
+public struct AIActivityFileChange: Identifiable, Sendable {
+    public let id: String
+    public let path: String
+    public let additions: Int
+    public let deletions: Int
+
+    public init(
+        id: String = UUID().uuidString,
+        path: String,
+        additions: Int = 0,
+        deletions: Int = 0
+    ) {
+        self.id = id
+        self.path = path
+        self.additions = additions
+        self.deletions = deletions
+    }
+}
+
+/// The pure roll-up behind ``AIActivityPanel``'s summary line — unit-testable
+/// without building a view.
+public enum AIActivitySummary {
+    /// One clause per non-empty category: `"N tool calls"`, `"N subagents"`,
+    /// `"N changes"`, each pluralized on its own count.
+    public static func summarize(
+        events: [AIActivityEvent],
+        changes: [AIActivityFileChange]
+    ) -> [String] {
+        var lines: [String] = []
+
+        if !events.isEmpty {
+            lines.append("\(events.count) tool \(events.count == 1 ? "call" : "calls")")
+        }
+
+        let subagents = Set(events.compactMap(\.subagent))
+        if !subagents.isEmpty {
+            lines.append("\(subagents.count) \(subagents.count == 1 ? "subagent" : "subagents")")
+        }
+
+        if !changes.isEmpty {
+            lines.append("\(changes.count) \(changes.count == 1 ? "change" : "changes")")
+        }
+
+        return lines
+    }
+}
+
+/// AI Elements' `ActivityPanel` — a run's tool-call durations, subagent
+/// fan-out, and file changes, rolled up under one summary line.
+public struct AIActivityPanel: View {
+    private let events: [AIActivityEvent]
+    private let changes: [AIActivityFileChange]
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+
+    public init(events: [AIActivityEvent], changes: [AIActivityFileChange] = []) {
+        self.events = events
+        self.changes = changes
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: Space.x3) {
+            HStack(spacing: Space.x3) {
+                ForEach(
+                    Array(AIActivitySummary.summarize(events: events, changes: changes).enumerated()),
+                    id: \.offset
+                ) { _, line in
+                    Text(line)
+                        .font(theme.typography.sans(theme.typography.xs, weight: .medium))
+                        .foregroundStyle(palette.mutedForeground)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if !events.isEmpty {
+                VStack(alignment: .leading, spacing: Space.x1) {
+                    AIToolSectionCaption("Tool calls")
+                    ForEach(events) { event in
+                        HStack(spacing: Space.x2) {
+                            ShadcnIconView(ShadcnIcon.wrench, size: 12)
+                                .foregroundStyle(palette.mutedForeground)
+                            Text(event.toolName).lineLimit(1)
+                            if let subagent = event.subagent {
+                                AITaskItemFile(subagent)
+                            }
+                            Spacer(minLength: 0)
+                            Text(Self.formattedDuration(event.duration))
+                                .font(theme.typography.mono(theme.typography.xs))
+                                .foregroundStyle(palette.mutedForeground)
+                        }
+                        .font(theme.typography.sans(theme.typography.xs))
+                        .foregroundStyle(palette.foreground)
+                    }
+                }
+            }
+
+            if !changes.isEmpty {
+                VStack(alignment: .leading, spacing: Space.x1) {
+                    AIToolSectionCaption("File changes")
+                    ForEach(changes) { change in
+                        HStack(spacing: Space.x2) {
+                            ShadcnIconView(ShadcnIcon.file, size: 12)
+                                .foregroundStyle(palette.mutedForeground)
+                            Text(change.path).lineLimit(1)
+                            Spacer(minLength: 0)
+                            Text("+\(change.additions)")
+                                .foregroundStyle(AITailwindColor.green600)
+                            Text("-\(change.deletions)")
+                                .foregroundStyle(AITailwindColor.red600)
+                        }
+                        .font(theme.typography.mono(theme.typography.xs))
+                    }
+                }
+            }
+        }
+        .padding(Space.x3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
+                .fill(palette.muted.opacity(0.3))
+        )
+        .shadcnBorder(palette.border, cornerRadius: theme.radius.md)
+    }
+
+    private static func formattedDuration(_ interval: TimeInterval) -> String {
+        interval < 1
+            ? String(format: "%.0fms", interval * 1000)
+            : String(format: "%.1fs", interval)
+    }
+}
+
 /// AI Elements' `Tool` — a bordered, collapsible record of one tool call.
 public struct AITool<Content: View>: View {
     private let name: String
@@ -96,6 +251,39 @@ public struct AITool<Content: View>: View {
         .shadcnBorder(palette.border, cornerRadius: theme.radius.md)
     }
 
+}
+
+/// `ToolMarker` — a single-line, non-disclosing tool row for dense
+/// transcripts where the full ``AITool`` card reads as too heavy.
+public struct AIToolMarker: View {
+    private let name: String
+    private let state: AIToolState
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+
+    public init(name: String, state: AIToolState) {
+        self.name = name
+        self.state = state
+    }
+
+    public var body: some View {
+        HStack(spacing: Space.x1_5) {
+            ShadcnIconView(state.systemImage, size: 12)
+                .foregroundStyle(state.iconTint ?? palette.mutedForeground)
+            Text(name)
+                .font(theme.typography.mono(theme.typography.xs))
+                .foregroundStyle(palette.mutedForeground)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Text(state.label)
+                .font(theme.typography.sans(theme.typography.xs))
+                .foregroundStyle(palette.mutedForeground.opacity(0.7))
+        }
+        .padding(.horizontal, Space.x2)
+        .padding(.vertical, Space.x1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
 /// The tool's title bar.
