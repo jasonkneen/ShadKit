@@ -92,7 +92,11 @@ public final class ShadcnFloatingPanelController: NSObject {
             let screen = anchorView?.window?.screen ?? NSScreen.main
         else { return }
 
-        let hosting = NSHostingView(rootView: AnyView(content()))
+        // A floating panel is nearly opaque whatever the pane behind it is
+        // set to: bright content bleeding through as grey blocks was worse
+        // than losing the glass.
+        let hosting = NSHostingView(rootView: AnyView(
+            content().environment(\.shadcnSurfaceOpacity, 0.94)))
         // Unlike `ShadcnHostingView` (which sets `sizingOptions = []` to
         // defer to the caller's Auto Layout constraints), this hosting view
         // has no constraints at all — it's positioned by explicit `setFrame`
@@ -198,7 +202,11 @@ public final class ShadcnFloatingPanelController: NSObject {
         close()
         guard let anchorWindow = anchorView?.window else { return }
 
-        let hosting = NSHostingView(rootView: AnyView(content()))
+        // A floating panel is nearly opaque whatever the pane behind it is
+        // set to: bright content bleeding through as grey blocks was worse
+        // than losing the glass.
+        let hosting = NSHostingView(rootView: AnyView(
+            content().environment(\.shadcnSurfaceOpacity, 0.94)))
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         hosting.frame = NSRect(origin: .zero, size: anchorWindow.frame.size)
