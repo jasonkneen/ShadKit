@@ -42,6 +42,47 @@ private struct TopBarAccessoryProbe: View {
 
 @MainActor
 final class AssistantPanelChromeTests: XCTestCase {
+
+    // MARK: - AIAssistantPanelThreadAccessoryWidths (U17 follow-up)
+
+    func testBothSidesGetTheirIdealWidthWhenTheyFitTogether() {
+        // Team's reported case: a 30pt accessory next to a 200pt title in a
+        // 480pt bar — the title must not be crushed toward its minimum just
+        // because a flexible sibling exists.
+        let result = AIAssistantPanelThreadAccessoryWidths.split(
+            threadIdeal: 200, accessoryIdeal: 30, available: 480, spacing: 8)
+        XCTAssertGreaterThanOrEqual(result.thread, 190)
+        XCTAssertEqual(result.thread, 200)
+    }
+
+    func testSurplusAfterBothIdealsGoesToTheAccessory() {
+        let result = AIAssistantPanelThreadAccessoryWidths.split(
+            threadIdeal: 100, accessoryIdeal: 40, available: 300, spacing: 10)
+        XCTAssertEqual(result.thread, 100)
+        XCTAssertEqual(result.accessory, 190)
+    }
+
+    func testAccessoryKeepsAtLeast65PercentOfItsIdealWhenBothAreLong() {
+        // Mirrors AssistantPanelChromeTests' AppKit-level pin: a long title
+        // and the real run-status accessory in a 320pt bar.
+        let result = AIAssistantPanelThreadAccessoryWidths.split(
+            threadIdeal: 240, accessoryIdeal: 220, available: 320, spacing: 8)
+        XCTAssertGreaterThanOrEqual(result.accessory, 220 * 0.65)
+    }
+
+    func testThreadTakesWhateverTheAccessorysGuaranteedShareLeavesBehind() {
+        let result = AIAssistantPanelThreadAccessoryWidths.split(
+            threadIdeal: 240, accessoryIdeal: 220, available: 320, spacing: 8)
+        XCTAssertEqual(result.thread + result.accessory, 320 - 8, accuracy: 0.01)
+    }
+
+    func testZeroOrNegativeAvailableWidthNeverGoesNegative() {
+        let result = AIAssistantPanelThreadAccessoryWidths.split(
+            threadIdeal: 100, accessoryIdeal: 50, available: 4, spacing: 8)
+        XCTAssertEqual(result.thread, 0)
+        XCTAssertEqual(result.accessory, 0)
+    }
+
     func testChromeDefaultsPreserveLegacyPanelPresentation() {
         let chrome = AIAssistantPanelChrome()
 

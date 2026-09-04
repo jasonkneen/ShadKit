@@ -379,6 +379,134 @@ public final class AIAssistantPanelModel: ObservableObject {
     }
 }
 
+/// Pure width split for `AIAssistantPanelThreadAccessoryLayout` — no
+/// SwiftUI types, so it's directly unit-testable.
+///
+/// When both sides' ideal widths fit, each gets its ideal and any surplus
+/// goes to the accessory (it sits trailing, so surplus reads as trailing
+/// whitespace rather than an awkward gap). When they don't fit, the
+/// accessory is guaranteed at least 65% of its own ideal width — matching
+/// `AssistantPanelChromeTests`'s pinned expectation for a long run-status
+/// string at a narrow bar — or whatever's left after the thread control,
+/// whichever is larger; the thread control takes the remainder and only
+/// truncates in this branch.
+enum AIAssistantPanelThreadAccessoryWidths {
+    static func split(
+        threadIdeal: CGFloat,
+        accessoryIdeal: CGFloat,
+        available: CGFloat,
+        spacing: CGFloat
+    ) -> (thread: CGFloat, accessory: CGFloat) {
+        let usable = max(0, available - spacing)
+        guard usable > 0 else { return (0, 0) }
+
+        if threadIdeal + accessoryIdeal <= usable {
+            let thread = threadIdeal
+            let accessory = usable - thread
+            return (thread, accessory)
+        }
+
+        let accessory = min(
+            max(0.65 * accessoryIdeal, usable - threadIdeal),
+            usable)
+        let thread = usable - accessory
+        return (thread, accessory)
+    }
+}
+
+/// Arranges exactly two subviews — the thread control, then the accessory —
+/// per `AIAssistantPanelThreadAccessoryWidths.split`. `layoutPriority`
+/// cannot express this rule: it hands a flexible high-priority sibling every
+/// remaining pixel before a lower-priority sibling is sized at all, so
+/// either the title or the accessory always wins outright regardless of how
+/// little the winner actually needs.
+struct AIAssistantPanelThreadAccessoryLayout: Layout {
+    let spacing: CGFloat
+    let threadMaxWidth: CGFloat
+
+    struct Cache {
+        var thread: CGFloat = 0
+        var accessory: CGFloat = 0
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+
+    func sizeThatFits(
+        proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache
+    ) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+
+        // An unconstrained query (a caller asking this container for its own
+        // ideal/intrinsic size) must never propose an infinite width to
+        // either subview: if a subview hosts something with no intrinsic
+        // size of its own (a `GeometryReader`, as the accessory-width probe
+        // in `AssistantPanelChromeTests` uses), AppKit's own
+        // `intrinsicContentSize` machinery throws on an infinite result.
+        // Answer with the sum of each side's own natural width instead.
+        guard let proposedWidth = proposal.width, proposedWidth.isFinite else {
+            let threadIdeal = min(
+                subviews[0].sizeThatFits(Self.unboundedMeasurement).width, threadMaxWidth)
+            let accessoryIdeal = subviews[1].sizeThatFits(Self.unboundedMeasurement).width
+            let height = max(
+                subviews[0].sizeThatFits(
+                    ProposedViewSize(width: threadIdeal, height: proposal.height)
+                ).height,
+                subviews[1].sizeThatFits(
+                    ProposedViewSize(width: accessoryIdeal, height: proposal.height)
+                ).height)
+            return CGSize(width: threadIdeal + spacing + accessoryIdeal, height: height)
+        }
+
+        let (thread, accessoryWidth) = widths(
+            available: proposedWidth, subviews: subviews, cache: &cache)
+        let height = max(
+            subviews[0].sizeThatFits(ProposedViewSize(width: thread, height: proposal.height)).height,
+            subviews[1].sizeThatFits(ProposedViewSize(width: accessoryWidth, height: proposal.height))
+                .height)
+        return CGSize(width: min(proposedWidth, thread + spacing + accessoryWidth), height: height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache
+    ) {
+        guard subviews.count == 2 else { return }
+        let (thread, accessoryWidth) = widths(
+            available: bounds.width, subviews: subviews, cache: &cache)
+        subviews[0].place(
+            at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+            proposal: ProposedViewSize(width: thread, height: bounds.height))
+        subviews[1].place(
+            at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing,
+            proposal: ProposedViewSize(width: accessoryWidth, height: bounds.height))
+    }
+
+    /// A caller's accessory content can carry its own `maxWidth: .infinity`
+    /// (matching how the top bar itself used to size it), which makes
+    /// `sizeThatFits(.unspecified)` propose an unbounded width and — for an
+    /// `NSHostingView`-backed subview — crash computing `intrinsicContentSize`
+    /// for an infinite size. Proposing a large-but-finite width instead
+    /// still yields each subview's true natural (unclamped) size.
+    private static let unboundedMeasurement = ProposedViewSize(width: 100_000, height: nil)
+
+    private func widths(
+        available rawAvailable: CGFloat, subviews: Subviews, cache: inout Cache
+    ) -> (thread: CGFloat, accessory: CGFloat) {
+        // Placement always resolves to a concrete, finite bounds, but guard
+        // anyway — never let a non-finite width reach the split math or
+        // (through it) a subview's proposal.
+        let available = rawAvailable.isFinite ? rawAvailable : 0
+        let threadIdeal = min(
+            subviews[0].sizeThatFits(Self.unboundedMeasurement).width, threadMaxWidth)
+        let accessoryIdeal = subviews[1].sizeThatFits(Self.unboundedMeasurement).width
+        let result = AIAssistantPanelThreadAccessoryWidths.split(
+            threadIdeal: threadIdeal, accessoryIdeal: accessoryIdeal,
+            available: available, spacing: spacing)
+        cache.thread = result.thread
+        cache.accessory = result.accessory
+        return result
+    }
+}
+
 /// Reusable assistant chrome for hosts that place chat controls outside the
 /// panel. It remains the canonical implementation even when the panel renders
 /// it internally, so thread selection and action ownership cannot drift.
@@ -404,26 +532,24 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
 
     public var body: some View {
         HStack(spacing: controlSpacing) {
-            threadControl
-                .frame(
-                    minWidth: 0,
-                    maxWidth: threadLabelMaxWidth,
-                    alignment: .leading
-                )
-                // Ranks above the roster/context/new-chat controls (all
-                // default priority 0, all `.fixedSize` and so unable to
-                // shrink) so their rigid width doesn't crowd the one element
-                // in this bar that both truncates gracefully and is the
-                // primary navigation control — but still ranks below the
-                // accessory, which stays the tie-breaker `AssistantPanelChromeTests`
-                // pins at compact widths (its live run status is the more
-                // urgent of the two when both are genuinely long).
-                .layoutPriority(1)
-
-            accessory
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
-                .clipped()
-                .layoutPriority(2)
+            // `layoutPriority` can't express "the title gets its ideal width
+            // unless the accessory actually needs the room": priority tiers
+            // hand a flexible high-priority sibling ALL remaining space
+            // before a lower-priority one is sized at all, so the accessory
+            // (however little it holds) always won at any tier above the
+            // title, and the title always won at any tier at or above the
+            // accessory. `AIAssistantPanelThreadAccessoryLayout` measures
+            // both sides' actual natural widths and only shrinks the title
+            // below its ideal when the accessory's ideal genuinely doesn't
+            // fit alongside it.
+            AIAssistantPanelThreadAccessoryLayout(
+                spacing: controlSpacing, threadMaxWidth: threadLabelMaxWidth
+            ) {
+                threadControl
+                    .frame(maxWidth: threadLabelMaxWidth, alignment: .leading)
+                accessory
+                    .clipped()
+            }
 
             // A top-level `if let` here, not a computed property with its own
             // internal branch: `HStack(spacing:)` allocates a spacing slot for
