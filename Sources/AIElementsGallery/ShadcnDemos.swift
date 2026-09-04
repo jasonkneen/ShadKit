@@ -369,6 +369,9 @@ struct OverlaysDemo: View {
     @State private var showDialog = false
     @State private var sidebarWidth: CGFloat = 220
     @State private var showCommand = false
+    @StateObject private var externalSelection = ShadcnCommandKeyboardSelection()
+    @State private var externalQuery = ""
+    @State private var externalSelectionResult: String?
     @State private var showSheet = false
     @State private var workspacePickerPresented = false
     @State private var currentWorkspace = AIWorkspaceEntry(name: "ShadKit", path: "/Users/dev/ShadKit", isGit: true)
@@ -460,6 +463,42 @@ struct OverlaysDemo: View {
                     isPresented: $showCommand,
                     groups: Self.commandGroups
                 ) { _ in }
+        }
+
+        GalleryBlock("Command — externally driven, no focus-stealing (U16)") {
+            VStack(alignment: .leading, spacing: Space.x2) {
+                Text("A stand-in for a consumer's own composer: it owns `query` and calls moveSelection/activateSelection itself. ShadcnCommand never takes focus.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: Space.x2) {
+                    ShadcnTextField("Type to filter…", text: $externalQuery)
+                        .frame(width: 220)
+                    ShadcnButton(icon: ShadcnIcon.chevronUp, variant: .outline, size: .iconSM) {
+                        externalSelection.moveSelection(by: -1)
+                    }
+                    ShadcnButton(icon: ShadcnIcon.chevronDown, variant: .outline, size: .iconSM) {
+                        externalSelection.moveSelection(by: 1)
+                    }
+                    ShadcnButton("Select", variant: .primary, size: .small) {
+                        externalSelection.activateSelection { externalSelectionResult = $0.title }
+                    }
+                }
+                if let externalSelectionResult {
+                    Text("Selected: \(externalSelectionResult)")
+                        .font(.system(size: 11))
+                }
+                ShadcnCommand(
+                    groups: Self.commandGroups,
+                    autofocusesField: false,
+                    showsSearchField: false,
+                    query: $externalQuery,
+                    selection: externalSelection,
+                    maxContentHeight: 160,
+                    onSelect: { externalSelectionResult = $0.title }
+                )
+                .frame(width: 280)
+                .shadcnBorderedBox()
+            }
         }
 
         GalleryBlock("Sheet") {

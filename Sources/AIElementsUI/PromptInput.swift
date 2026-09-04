@@ -198,6 +198,84 @@ public struct AIPromptPalette: Sendable {
     }
 }
 
+/// External-composer bridge for the anchored `AIPromptPalette` presentation
+/// (G2): a caller with its own text composer — not `AIPromptInput`'s own
+/// textarea — owns this object, opens/closes/queries it from its own text
+/// handling, and drives selection through `keyboardSelection` from its own
+/// key handling, all without any of `AIPromptInput`'s or `ShadcnCommand`'s
+/// views ever taking first responder.
+public final class AIPromptPaletteState: ObservableObject {
+    @Published public var activePalette: AIPromptPalette?
+    /// The caller's own bookkeeping for where the trigger was — mirrors
+    /// `AIPromptInput`'s internal `paletteAnchor`, but this copy is the
+    /// caller's own composer's offset, not `AIPromptInput`'s.
+    @Published public var paletteAnchor: Int?
+    @Published public var query: String = ""
+    /// Drives `ShadcnCommand`'s highlight; call `moveSelection(by:)` /
+    /// `activateSelection(onSelect:)` from the caller's own key handling.
+    public let keyboardSelection = ShadcnCommandKeyboardSelection()
+
+    public init() {}
+
+    public func open(_ palette: AIPromptPalette, anchor: Int? = nil) {
+        activePalette = palette
+        paletteAnchor = anchor
+        query = ""
+    }
+
+    public func dismiss() {
+        activePalette = nil
+        paletteAnchor = nil
+        query = ""
+    }
+}
+
+/// Renders an `AIPromptPaletteState`'s open palette anchored above whatever
+/// it's attached to (typically via `.overlay(alignment: .top)` on the
+/// caller's own composer), with no field of its own and no focus-stealing —
+/// the caller's `state.query` and `state.keyboardSelection` are the only
+/// inputs. Sizes to its content up to `availableHeight`, same as
+/// `AIPromptInput`'s own `.anchored` presentation.
+public struct AIPromptPaletteOverlay: View {
+    @ObservedObject private var state: AIPromptPaletteState
+    private let availableHeight: CGFloat
+    private let onSelect: (ShadcnCommandItem) -> Void
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+
+    public init(
+        state: AIPromptPaletteState,
+        availableHeight: CGFloat,
+        onSelect: @escaping (ShadcnCommandItem) -> Void
+    ) {
+        self.state = state
+        self.availableHeight = availableHeight
+        self.onSelect = onSelect
+    }
+
+    public var body: some View {
+        if let activePalette = state.activePalette {
+            ShadcnCommand(
+                groups: activePalette.groups,
+                placeholder: activePalette.placeholder,
+                emptyText: activePalette.emptyText,
+                autofocusesField: false,
+                showsSearchField: false,
+                query: Binding(get: { state.query }, set: { state.query = $0 }),
+                selection: state.keyboardSelection,
+                maxContentHeight: max(0, availableHeight),
+                onEscape: { state.dismiss() },
+                onSelect: onSelect
+            )
+            .shadcnBorder(palette.border, cornerRadius: theme.radius.xl)
+            .shadcnShadow(.lg)
+            .alignmentGuide(.top) { dimensions in dimensions.height + Space.x2 }
+            .transition(.opacity)
+        }
+    }
+}
+
 /// How `AIPromptInput` presents an opened `AIPromptPalette`.
 public enum AIPromptPalettePresentation: Sendable {
     /// A modal `shadcnCommandDialog`, upper-third placement. Matches 0.3.x.

@@ -65,6 +65,46 @@ public enum ShadcnCommandModel {
     }
 }
 
+// MARK: - External keyboard selection
+
+/// Drives `ShadcnCommand`'s highlight from outside the view — for a caller
+/// whose own composer owns first responder and forwards up/down/enter to
+/// this object's `moveSelection(by:)` / `activateSelection(onSelect:)`
+/// instead of letting `ShadcnCommand`'s own (possibly hidden, possibly
+/// unfocused) search field capture them.
+public final class ShadcnCommandKeyboardSelection: ObservableObject {
+    @Published public internal(set) var highlighted: String?
+    var flatItems: [ShadcnCommandItem] = []
+
+    public init() {}
+
+    func sync(_ items: [ShadcnCommandItem]) {
+        flatItems = items
+        if let highlighted, items.contains(where: { $0.id == highlighted }) { return }
+        highlighted = items.first?.id
+    }
+
+    public func moveSelection(by delta: Int) {
+        guard !flatItems.isEmpty else { return }
+        let currentIndex = flatItems.firstIndex { $0.id == highlighted } ?? -1
+        let next = min(max(currentIndex + delta, 0), flatItems.count - 1)
+        highlighted = flatItems[next].id
+    }
+
+    public func activateSelection(onSelect: (ShadcnCommandItem) -> Void) {
+        guard let highlighted, let item = flatItems.first(where: { $0.id == highlighted })
+        else { return }
+        onSelect(item)
+    }
+}
+
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 // MARK: - View
 
 /// shadcn's `Command` (built on `cmdk`): a search field over grouped,
@@ -75,6 +115,24 @@ public struct ShadcnCommand: View {
     private let placeholder: String
     private let emptyText: String
     private let onSelect: (ShadcnCommandItem) -> Void
+    /// `false` renders the field without taking first responder on
+    /// appear — for a caller whose own text view should keep focus (an
+    /// inline mention menu over an external composer, say).
+    private let autofocusesField: Bool
+    /// `false` hides the search field entirely: the list renders whatever
+    /// `query` (external or internal) currently filters to, with no visible
+    /// or focusable field of its own.
+    private let showsSearchField: Bool
+    /// Drives filtering from outside instead of the field's own `@State`.
+    /// `nil` (the default) keeps 0.3.x's fully internal query.
+    private let externalQuery: Binding<String>?
+    /// Drives highlighting from outside instead of the view's own
+    /// `@State`. `nil` (the default) keeps 0.3.x's fully internal
+    /// highlight, including this view's own keyboard handling.
+    private let externalSelection: ShadcnCommandKeyboardSelection?
+    /// Caps the row list's height; below that, it sizes to its content
+    /// instead of always reserving the cap's full height.
+    private let maxContentHeight: CGFloat
 
     /// Called on Escape. `nil` (the standalone-embed default) means Escape
     /// does nothing; `shadcnCommandDialog` supplies one that dismisses.
@@ -82,8 +140,9 @@ public struct ShadcnCommand: View {
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
-    @State private var query = ""
-    @State private var highlighted: String?
+    @State private var internalQuery = ""
+    @State private var internalHighlighted: String?
+    @State private var contentHeight: CGFloat = 0
     /// Only hover moves the highlight, and only when the pointer actually
     /// moved — set by `.onContinuousHover`'s location, not by `.onHover`'s
     /// boolean, so a stationary pointer left over a row doesn't re-steal the
@@ -95,14 +154,32 @@ public struct ShadcnCommand: View {
         groups: [ShadcnCommandGroup],
         placeholder: String = "Type a command or search...",
         emptyText: String = "No results found.",
+        autofocusesField: Bool = true,
+        showsSearchField: Bool = true,
+        query: Binding<String>? = nil,
+        selection: ShadcnCommandKeyboardSelection? = nil,
+        maxContentHeight: CGFloat = 288,
         onEscape: (() -> Void)? = nil,
         onSelect: @escaping (ShadcnCommandItem) -> Void
     ) {
         self.groups = groups
         self.placeholder = placeholder
         self.emptyText = emptyText
+        self.autofocusesField = autofocusesField
+        self.showsSearchField = showsSearchField
+        self.externalQuery = query
+        self.externalSelection = selection
+        self.maxContentHeight = maxContentHeight
         self.onEscape = onEscape
         self.onSelect = onSelect
+    }
+
+    private var query: String {
+        get { externalQuery?.wrappedValue ?? internalQuery }
+    }
+
+    private var highlighted: String? {
+        externalSelection?.highlighted ?? internalHighlighted
     }
 
     private var filtered: [ShadcnCommandGroup] {
@@ -116,8 +193,10 @@ public struct ShadcnCommand: View {
     public var body: some View {
         ScrollViewReader { scrollProxy in
             VStack(alignment: .leading, spacing: 0) {
-                searchField
-                Divider().overlay(palette.border)
+                if showsSearchField {
+                    searchField
+                    Divider().overlay(palette.border)
+                }
 
                 if flatItems.isEmpty {
                     Text(emptyText)
@@ -133,8 +212,15 @@ public struct ShadcnCommand: View {
                             }
                         }
                         .padding(Space.x1)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: ContentHeightKey.self, value: proxy.size.height)
+                            }
+                        )
                     }
-                    .frame(maxHeight: 288)
+                    .frame(height: min(max(contentHeight, 1), maxContentHeight))
+                    .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
                 }
             }
             .background(
@@ -156,7 +242,7 @@ public struct ShadcnCommand: View {
             ShadcnIconView(ShadcnIcon.search, size: 14)
                 .foregroundStyle(palette.mutedForeground)
 
-            TextField(placeholder, text: $query)
+            TextField(placeholder, text: externalQuery ?? $internalQuery)
                 .textFieldStyle(.plain)
                 .font(theme.typography.sans(theme.typography.sm))
                 .focused($isFieldFocused)
@@ -172,7 +258,9 @@ public struct ShadcnCommand: View {
         }
         .padding(.horizontal, Space.x3)
         .frame(height: 44)
-        .task { isFieldFocused = true }
+        .applyIf(autofocusesField) { view in
+            view.task { isFieldFocused = true }
+        }
     }
 
     private func groupSection(_ group: ShadcnCommandGroup) -> some View {
@@ -236,7 +324,7 @@ public struct ShadcnCommand: View {
                 // stationary cursor after an arrow-key move.
                 if let lastHoverLocation, lastHoverLocation == location { return }
                 lastHoverLocation = location
-                highlighted = item.id
+                setHighlighted(item.id)
             case .ended:
                 lastHoverLocation = nil
             }
@@ -244,22 +332,45 @@ public struct ShadcnCommand: View {
     }
 
     private func moveHighlight(by delta: Int) {
+        if let externalSelection {
+            externalSelection.moveSelection(by: delta)
+            return
+        }
         let items = flatItems
         guard !items.isEmpty else { return }
-        let currentIndex = items.firstIndex { $0.id == highlighted } ?? -1
+        let currentIndex = items.firstIndex { $0.id == internalHighlighted } ?? -1
         let next = min(max(currentIndex + delta, 0), items.count - 1)
-        highlighted = items[next].id
+        internalHighlighted = items[next].id
     }
 
     private func selectHighlighted() {
-        guard let id = highlighted, let item = flatItems.first(where: { $0.id == id }) else { return }
+        if let externalSelection {
+            externalSelection.activateSelection(onSelect: onSelect)
+            return
+        }
+        guard let id = internalHighlighted, let item = flatItems.first(where: { $0.id == id })
+        else { return }
         onSelect(item)
     }
 
+    private func setHighlighted(_ id: String) {
+        if let externalSelection {
+            externalSelection.highlighted = id
+        } else {
+            internalHighlighted = id
+        }
+    }
+
     private func syncHighlight() {
+        if let externalSelection {
+            externalSelection.sync(flatItems)
+            return
+        }
         let items = flatItems
-        if let highlighted, items.contains(where: { $0.id == highlighted }) { return }
-        highlighted = items.first?.id
+        if let internalHighlighted, items.contains(where: { $0.id == internalHighlighted }) {
+            return
+        }
+        internalHighlighted = items.first?.id
     }
 }
 

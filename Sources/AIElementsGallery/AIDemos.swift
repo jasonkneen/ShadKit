@@ -165,6 +165,8 @@ struct PromptDemo: View {
     @State private var model: String? = "opus"
     @State private var composerText = ""
     @State private var anchoredComposerText = ""
+    @StateObject private var externalPaletteState = AIPromptPaletteState()
+    @State private var externalComposerText = ""
     @State private var attachments: [AIPromptInputAttachments.Item] = [
         .init(filename: "diagram.png", byteSize: 482_000, state: .done),
         .init(filename: "recording.mp4", byteSize: 12_400_000, state: .uploading),
@@ -262,6 +264,38 @@ struct PromptDemo: View {
                 AIPromptInputButton(systemImage: ShadcnIcon.plus, tooltip: "Add attachment") {}
             } trailing: {
                 EmptyView()
+            }
+            .frame(maxWidth: 620)
+        }
+
+        GalleryBlock("Anchored palette — external composer (U16)") {
+            VStack(alignment: .leading, spacing: Space.x2) {
+                Text("A stand-in for a consumer's own text view: it owns AIPromptPaletteState directly and opens the palette itself, so nothing here ever steals its focus.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: Space.x2) {
+                    ShadcnTextField("Type @ then a name…", text: $externalComposerText)
+                        .onChange(of: externalComposerText) { _, value in
+                            if value.hasSuffix("@") {
+                                externalPaletteState.open(Self.mentionPalette)
+                            } else if externalPaletteState.activePalette != nil {
+                                externalPaletteState.query = String(value.split(separator: "@").last ?? "")
+                            }
+                        }
+                    ShadcnButton(icon: ShadcnIcon.chevronUp, variant: .outline, size: .iconSM) {
+                        externalPaletteState.keyboardSelection.moveSelection(by: -1)
+                    }
+                    ShadcnButton(icon: ShadcnIcon.chevronDown, variant: .outline, size: .iconSM) {
+                        externalPaletteState.keyboardSelection.moveSelection(by: 1)
+                    }
+                }
+                ZStack(alignment: .top) {
+                    Color.clear.frame(height: 4)
+                    AIPromptPaletteOverlay(state: externalPaletteState, availableHeight: 160) { item in
+                        externalComposerText += item.title
+                        externalPaletteState.dismiss()
+                    }
+                }
             }
             .frame(maxWidth: 620)
         }

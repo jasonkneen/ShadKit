@@ -47,4 +47,50 @@ final class CommandModelTests: XCTestCase {
         let result = ShadcnCommandModel.filter(groups, query: "nonexistent-xyz")
         XCTAssertTrue(result.isEmpty)
     }
+
+    // MARK: - ShadcnCommandKeyboardSelection (U16)
+
+    private var flatItems: [ShadcnCommandItem] {
+        groups.flatMap(\.items)
+    }
+
+    func testSyncHighlightsTheFirstItemWhenNothingWasHighlighted() {
+        let selection = ShadcnCommandKeyboardSelection()
+        selection.sync(flatItems)
+        XCTAssertEqual(selection.highlighted, "c1")
+    }
+
+    func testSyncKeepsAnExistingHighlightIfStillPresent() {
+        let selection = ShadcnCommandKeyboardSelection()
+        selection.sync(flatItems)
+        selection.moveSelection(by: 1)
+        XCTAssertEqual(selection.highlighted, "c2")
+        selection.sync(flatItems)
+        XCTAssertEqual(selection.highlighted, "c2")
+    }
+
+    func testMoveSelectionClampsAtBothEnds() {
+        let selection = ShadcnCommandKeyboardSelection()
+        selection.sync(flatItems)
+        selection.moveSelection(by: -5)
+        XCTAssertEqual(selection.highlighted, "c1")
+        selection.moveSelection(by: 5)
+        XCTAssertEqual(selection.highlighted, "a2")
+    }
+
+    func testActivateSelectionInvokesOnSelectWithTheHighlightedItem() {
+        let selection = ShadcnCommandKeyboardSelection()
+        selection.sync(flatItems)
+        selection.moveSelection(by: 1)
+        var selected: ShadcnCommandItem?
+        selection.activateSelection { selected = $0 }
+        XCTAssertEqual(selected?.id, "c2")
+    }
+
+    func testActivateSelectionDoesNothingWithNoItems() {
+        let selection = ShadcnCommandKeyboardSelection()
+        var called = false
+        selection.activateSelection { _ in called = true }
+        XCTAssertFalse(called)
+    }
 }
