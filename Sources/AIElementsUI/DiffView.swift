@@ -164,6 +164,13 @@ public struct AIDiffView: View {
     private let language: String?
     /// Runs of context longer than this collapse behind a "N lines hidden" row.
     private let collapseThreshold: Int
+    /// Overrides the mono type-scale step used for gutters/markers/content.
+    /// `nil` keeps the existing `.xs`/`.sm` steps.
+    private let fontSize: CGFloat?
+    /// Renders rows inside a `LazyVStack` instead of `VStack` so a caller can
+    /// embed this in a `ScrollView` without materializing every row of a
+    /// large diff up front. Off by default to keep existing layout identical.
+    private let usesLazyRows: Bool
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -173,38 +180,38 @@ public struct AIDiffView: View {
         lines: [AIDiffLine],
         mode: AIDiffMode = .unified,
         language: String? = nil,
-        collapseThreshold: Int = 6
+        collapseThreshold: Int = 6,
+        fontSize: CGFloat? = nil,
+        usesLazyRows: Bool = false
     ) {
         self.lines = lines
         self.mode = mode
         self.language = language
         self.collapseThreshold = collapseThreshold
+        self.fontSize = fontSize
+        self.usesLazyRows = usesLazyRows
     }
 
     public init(
         unified: String,
         mode: AIDiffMode = .unified,
         language: String? = nil,
-        collapseThreshold: Int = 6
+        collapseThreshold: Int = 6,
+        fontSize: CGFloat? = nil,
+        usesLazyRows: Bool = false
     ) {
         self.init(
             lines: AIDiffParser.parse(unified: unified),
-            mode: mode, language: language, collapseThreshold: collapseThreshold)
+            mode: mode, language: language, collapseThreshold: collapseThreshold,
+            fontSize: fontSize, usesLazyRows: usesLazyRows)
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(rows) { row in
-                switch row {
-                case let .line(line):
-                    AIDiffLineRow(
-                        line: line,
-                        counterpart: counterpart(for: line),
-                        showsBothNumbers: mode == .split,
-                        language: language)
-                case let .collapsed(id, count):
-                    collapsedRow(id: id, count: count)
-                }
+        Group {
+            if usesLazyRows {
+                LazyVStack(alignment: .leading, spacing: 0) { rowViews }
+            } else {
+                VStack(alignment: .leading, spacing: 0) { rowViews }
             }
         }
         .background(
@@ -212,6 +219,23 @@ public struct AIDiffView: View {
                 .fill(palette.background))
         .shadcnBorder(palette.border, cornerRadius: theme.radius.md)
         .clipShape(RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var rowViews: some View {
+        ForEach(rows) { row in
+            switch row {
+            case let .line(line):
+                AIDiffLineRow(
+                    line: line,
+                    counterpart: counterpart(for: line),
+                    showsBothNumbers: mode == .split,
+                    language: language,
+                    fontSize: fontSize)
+            case let .collapsed(id, count):
+                collapsedRow(id: id, count: count)
+            }
+        }
     }
 
     // MARK: Rows
@@ -310,9 +334,16 @@ struct AIDiffLineRow: View {
     let counterpart: String?
     let showsBothNumbers: Bool
     let language: String?
+    /// Overrides the mono type-scale step; nil keeps the `.xs`/`.sm` steps.
+    var fontSize: CGFloat? = nil
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+
+    private func monoStep(_ fallback: ShadcnTypography.Step) -> ShadcnTypography.Step {
+        guard let fontSize else { return fallback }
+        return ShadcnTypography.Step(size: fontSize, lineHeight: fallback.lineHeight * (fontSize / fallback.size))
+    }
 
     /// Additions and removals get a tinted row; context stays on the surface.
     private var rowBackground: Color {
@@ -339,7 +370,7 @@ struct AIDiffLineRow: View {
                 if showsBothNumbers { gutter(line.newNumber) }
 
                 Text(marker)
-                    .font(theme.typography.mono(theme.typography.xs))
+                    .font(theme.typography.mono(monoStep(theme.typography.xs)))
                     .foregroundStyle(markerColour)
                     .frame(width: 14)
             }
@@ -364,7 +395,7 @@ struct AIDiffLineRow: View {
     private var content: some View {
         if line.kind == .hunk {
             Text(line.text)
-                .font(theme.typography.mono(theme.typography.xs))
+                .font(theme.typography.mono(monoStep(theme.typography.xs)))
                 .foregroundStyle(palette.mutedForeground)
                 .padding(.horizontal, Space.x3)
                 .padding(.vertical, 2)
@@ -372,7 +403,7 @@ struct AIDiffLineRow: View {
             wordHighlighted(against: counterpart)
         } else {
             Text(line.text)
-                .font(theme.typography.mono(theme.typography.sm))
+                .font(theme.typography.mono(monoStep(theme.typography.sm)))
                 .foregroundStyle(palette.foreground)
                 .textSelection(.enabled)
         }
@@ -392,13 +423,13 @@ struct AIDiffLineRow: View {
                     ? piece.bold().foregroundColor(accent)
                     : piece)
         }
-        .font(theme.typography.mono(theme.typography.sm))
+        .font(theme.typography.mono(monoStep(theme.typography.sm)))
         .textSelection(.enabled)
     }
 
     private func gutter(_ number: Int?) -> some View {
         Text(number.map(String.init) ?? "")
-            .font(theme.typography.mono(theme.typography.xs))
+            .font(theme.typography.mono(monoStep(theme.typography.xs)))
             .foregroundStyle(palette.mutedForeground.opacity(0.7))
             .frame(width: 40, alignment: .trailing)
             .padding(.trailing, Space.x2)

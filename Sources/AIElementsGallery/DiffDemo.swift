@@ -46,5 +46,10 @@ struct DiffDemo: View {
             AIDiffView(unified: sample, mode: mode, language: "swift")
                 .frame(maxWidth: 720)
         }
+
+        GalleryBlock("Font size") {
+            AIDiffView(unified: sample, mode: mode, language: "swift", fontSize: 11)
+                .frame(maxWidth: 720)
+        }
     }
 }
