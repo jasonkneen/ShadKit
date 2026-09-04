@@ -22,7 +22,11 @@ public struct ShadcnPanel<Content: View>: View {
         }
         .padding(padding)
         .background(
-            ShadcnTranslucentFill(color: palette.popover, cornerRadius: theme.radius.md)
+            // Thick, so bright content behind a floating panel (a white
+            // bubble) does not smear through it as a grey block.
+            ShadcnTranslucentFill(
+                color: palette.popover, cornerRadius: theme.radius.md,
+                material: .thickMaterial)
         )
         .shadcnBorder(palette.border, cornerRadius: theme.radius.md)
         .foregroundStyle(palette.popoverForeground)

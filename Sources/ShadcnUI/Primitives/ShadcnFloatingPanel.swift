@@ -19,6 +19,14 @@ struct ShadcnFloatingAnchor: NSViewRepresentable {
     }
 }
 
+/// A borderless `NSPanel` refuses key status by default, which silently
+/// turned `makeKey()` into a no-op: a search field in a floating panel never
+/// received typing and the caret stayed in the window behind. This one can.
+private final class ShadcnKeyablePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 /// A borderless, non-activating `NSPanel` shown relative to an anchor view,
 /// positioned in real screen space so it can never be clipped by an
 /// ancestor's AppKit frame — the failure mode a purely in-tree SwiftUI
@@ -108,7 +116,7 @@ public final class ShadcnFloatingPanelController: NSObject {
         let placeholder = CGSize(width: contentWidth ?? 320, height: contentHeight ?? 320)
         hosting.frame = NSRect(origin: .zero, size: placeholder)
 
-        let panel = NSPanel(
+        let panel = ShadcnKeyablePanel(
             contentRect: NSRect(origin: anchorRect.origin, size: placeholder),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -195,7 +203,7 @@ public final class ShadcnFloatingPanelController: NSObject {
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         hosting.frame = NSRect(origin: .zero, size: anchorWindow.frame.size)
 
-        let panel = NSPanel(
+        let panel = ShadcnKeyablePanel(
             contentRect: anchorWindow.frame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
