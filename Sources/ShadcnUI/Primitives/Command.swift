@@ -163,6 +163,7 @@ public struct ShadcnCommand: View {
                 .onSubmit { selectHighlighted() }
                 .onKeyPress(.downArrow) { moveHighlight(by: 1); return .handled }
                 .onKeyPress(.upArrow) { moveHighlight(by: -1); return .handled }
+                .onKeyPress(.tab) { selectHighlighted(); return .handled }
                 .onKeyPress(.escape) {
                     guard let onEscape else { return .ignored }
                     onEscape()

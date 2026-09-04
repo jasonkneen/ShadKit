@@ -162,6 +162,7 @@ struct PromptDemo: View {
     @State private var streaming = "Explain the render loop"
     @State private var model: String? = "opus"
     @State private var composerText = ""
+    @State private var anchoredComposerText = ""
     @State private var attachments: [AIPromptInputAttachments.Item] = [
         .init(filename: "diagram.png", byteSize: 482_000, state: .done),
         .init(filename: "recording.mp4", byteSize: 12_400_000, state: .uploading),
@@ -235,6 +236,24 @@ struct PromptDemo: View {
                 AIPromptInputAttachments(items: attachments) { id in
                     attachments.removeAll { $0.id == id }
                 }
+            } tools: {
+                AIPromptInputButton(systemImage: ShadcnIcon.plus, tooltip: "Add attachment") {}
+            } trailing: {
+                EmptyView()
+            }
+            .frame(maxWidth: 620)
+        }
+
+        GalleryBlock("Anchored palette") {
+            AIPromptInput(
+                text: $anchoredComposerText,
+                status: .ready,
+                palettes: [Self.mentionPalette, Self.slashPalette],
+                palettePresentation: .anchored(availableHeight: 220),
+                onSubmit: {},
+                onPaletteSelect: { _, _ in }
+            ) {
+                EmptyView()
             } tools: {
                 AIPromptInputButton(systemImage: ShadcnIcon.plus, tooltip: "Add attachment") {}
             } trailing: {

@@ -185,6 +185,17 @@ public struct AIPromptPalette: Sendable {
     }
 }
 
+/// How `AIPromptInput` presents an opened `AIPromptPalette`.
+public enum AIPromptPalettePresentation: Sendable {
+    /// A modal `shadcnCommandDialog`, upper-third placement. Matches 0.3.x.
+    case dialog
+    /// A list anchored directly above the composer, clamped to
+    /// `availableHeight`. Up/down/tab/enter/esc are captured by the list's
+    /// own search field the same way they are in `.dialog`; the caller only
+    /// needs to leave room above the composer for it to grow into.
+    case anchored(availableHeight: CGFloat)
+}
+
 /// AI Elements' `PromptInput` — the composer.
 ///
 /// Built on shadcn's `InputGroup`: one `rounded-md border shadow-xs` shell that
@@ -206,6 +217,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
     /// behavior change for existing callers.
     private let palettes: [AIPromptPalette]
     private let onPaletteSelect: ((Character, ShadcnCommandItem) -> Void)?
+    private let palettePresentation: AIPromptPalettePresentation
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -222,6 +234,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
         status: AIPromptStatus = .ready,
         style: AIPromptInputStyle = .default,
         palettes: [AIPromptPalette] = [],
+        palettePresentation: AIPromptPalettePresentation = .dialog,
         onSubmit: @escaping () -> Void,
         onStop: (() -> Void)? = nil,
         onPaletteSelect: ((Character, ShadcnCommandItem) -> Void)? = nil,
@@ -234,6 +247,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
         self.status = status
         self.style = style
         self.palettes = palettes
+        self.palettePresentation = palettePresentation
         self.onSubmit = onSubmit
         self.onStop = onStop
         self.onPaletteSelect = onPaletteSelect
@@ -322,13 +336,41 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
         // mouse-down from the NSTextView inside and the composer never focuses.
         // Focus is driven by the editor itself (and by programmatic FocusState).
         .onChange(of: text) { _, newValue in updateActivePalette(for: newValue) }
-        .shadcnCommandDialog(
-            isPresented: isPaletteDialogPresented,
-            groups: activePalette?.groups ?? [],
-            placeholder: activePalette?.placeholder ?? "Type a command or search...",
-            emptyText: activePalette?.emptyText ?? "No results found.",
-            onSelect: { handlePaletteSelect($0) }
-        )
+        .applyIf(isDialogPresentation) { view in
+            view.shadcnCommandDialog(
+                isPresented: isPaletteDialogPresented,
+                groups: activePalette?.groups ?? [],
+                placeholder: activePalette?.placeholder ?? "Type a command or search...",
+                emptyText: activePalette?.emptyText ?? "No results found.",
+                onSelect: { handlePaletteSelect($0) }
+            )
+        }
+        .overlay(alignment: .top) {
+            if !isDialogPresentation, let activePalette,
+               case let .anchored(availableHeight) = palettePresentation {
+                ShadcnCommand(
+                    groups: activePalette.groups,
+                    placeholder: activePalette.placeholder,
+                    emptyText: activePalette.emptyText,
+                    onEscape: { dismissPalette(restoreFocus: true) },
+                    onSelect: { handlePaletteSelect($0) }
+                )
+                .frame(maxHeight: max(0, availableHeight))
+                .shadcnBorder(palette.border, cornerRadius: theme.radius.xl)
+                .shadcnShadow(.lg)
+                // Anchors the palette's bottom edge to the composer's top
+                // edge: the top-alignment guide reports its own height, so
+                // the layout system shifts the whole view up by exactly
+                // that much rather than down into the composer.
+                .alignmentGuide(.top) { dimensions in dimensions.height + Space.x2 }
+                .transition(.opacity)
+            }
+        }
+    }
+
+    private var isDialogPresentation: Bool {
+        if case .dialog = palettePresentation { return true }
+        return false
     }
 
     private var isPaletteDialogPresented: Binding<Bool> {
