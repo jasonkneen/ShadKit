@@ -245,6 +245,48 @@ struct FormsDemo: View {
             )
         }
 
+        GalleryBlock("Select — icon-only trigger tint (U22)") {
+            VStack(alignment: .leading, spacing: Space.x2) {
+                Text("Default: follows palette.foreground/mutedForeground by selection, same as .symbolOnly/.labelOnly. tintsTriggerWithPrimary opts into the brand colour.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: Space.x4) {
+                    HStack(spacing: Space.x2) {
+                        ShadcnButton(icon: ShadcnIcon.chevronLeft, variant: .ghost, size: .iconSM) {}
+                        ShadcnSelect(
+                            "Model",
+                            selection: $model,
+                            isCompact: true,
+                            triggerStyle: .iconOnly,
+                            options: [
+                                ("opus", "Claude Opus 5"),
+                                ("sonnet", "Claude Sonnet 5"),
+                                ("haiku", "Claude Haiku 4.5"),
+                            ]
+                        )
+                        ShadcnButton(icon: ShadcnIcon.chevronRight, variant: .ghost, size: .iconSM) {}
+                    }
+                    HStack(spacing: Space.x2) {
+                        ShadcnSelect(
+                            "Model",
+                            selection: $model,
+                            isCompact: true,
+                            triggerStyle: .iconOnly,
+                            tintsTriggerWithPrimary: true,
+                            options: [
+                                ("opus", "Claude Opus 5"),
+                                ("sonnet", "Claude Sonnet 5"),
+                                ("haiku", "Claude Haiku 4.5"),
+                            ]
+                        )
+                        Text("tintsTriggerWithPrimary: true")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+
         GalleryBlock("Switch & Checkbox") {
             HStack(spacing: Space.x6) {
                 HStack(spacing: Space.x2) {

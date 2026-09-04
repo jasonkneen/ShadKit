@@ -415,6 +415,18 @@ public enum ShadcnSelectTriggerStyle: Sendable {
     case labelOnly
 }
 
+/// Trigger glyph colour for `ShadcnSelect` (U22). Pure, so the "never
+/// `primary` unless opted in" contract is pinned by a test rather than only
+/// by reading the source.
+func shadcnSelectTriggerIconTint(
+    isSelected: Bool,
+    tintsWithPrimary: Bool,
+    palette: ShadcnPalette
+) -> Color {
+    if tintsWithPrimary { return palette.primary }
+    return isSelected ? palette.foreground : palette.mutedForeground
+}
+
 /// Radix `Select` — a trigger showing the current value plus a dropdown of
 /// options. Trigger chrome matches `Input`.
 public struct ShadcnSelect<Value: Hashable>: View {
@@ -432,6 +444,11 @@ public struct ShadcnSelect<Value: Hashable>: View {
     /// Long lists scroll inside this many rows instead of growing the panel
     /// off-screen (upward placement uses this for `contentHeight`).
     private let maxVisibleRows: Int
+    /// Opt-in (U22): `.iconOnly`/`.symbolOnly`/`.standard` trigger glyphs
+    /// tint with `palette.primary` instead of the default foreground/
+    /// mutedForeground-by-selection rule, for a consumer that wants the
+    /// brand colour to read as an accent among neutral controls.
+    private let tintsTriggerWithPrimary: Bool
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -448,6 +465,7 @@ public struct ShadcnSelect<Value: Hashable>: View {
         triggerStyle: ShadcnSelectTriggerStyle = .standard,
         edge: VerticalEdge = .bottom,
         maxVisibleRows: Int = 8,
+        tintsTriggerWithPrimary: Bool = false,
         options: [ShadcnSelectOption<Value>]
     ) {
         self.placeholder = placeholder
@@ -458,6 +476,7 @@ public struct ShadcnSelect<Value: Hashable>: View {
         self.triggerStyle = triggerStyle
         self.edge = edge
         self.maxVisibleRows = max(1, maxVisibleRows)
+        self.tintsTriggerWithPrimary = tintsTriggerWithPrimary
         self._isOpen = State(initialValue: startsOpen)
     }
 
@@ -471,6 +490,7 @@ public struct ShadcnSelect<Value: Hashable>: View {
         triggerStyle: ShadcnSelectTriggerStyle = .standard,
         edge: VerticalEdge = .bottom,
         maxVisibleRows: Int = 8,
+        tintsTriggerWithPrimary: Bool = false,
         options: [(value: Value, label: String)]
     ) {
         self.init(
@@ -482,6 +502,7 @@ public struct ShadcnSelect<Value: Hashable>: View {
             triggerStyle: triggerStyle,
             edge: edge,
             maxVisibleRows: maxVisibleRows,
+            tintsTriggerWithPrimary: tintsTriggerWithPrimary,
             options: options.map { ShadcnSelectOption(value: $0.value, label: $0.label) }
         )
     }
@@ -635,6 +656,8 @@ public struct ShadcnSelect<Value: Hashable>: View {
 
     @ViewBuilder
     private func triggerIcon(size: CGFloat) -> some View {
+        let tint = shadcnSelectTriggerIconTint(
+            isSelected: current != nil, tintsWithPrimary: tintsTriggerWithPrimary, palette: palette)
         if let image = current?.image {
             image
                 .resizable()
@@ -645,11 +668,11 @@ public struct ShadcnSelect<Value: Hashable>: View {
             ShadcnIconView(
                 systemImage, size: size,
                 variableValue: current?.symbolVariableValue)
-                .foregroundStyle(palette.foreground.opacity(0.9))
+                .foregroundStyle(tint)
         } else {
             // Keep icon-only chips from collapsing when nothing is selected.
             ShadcnIconView(ShadcnIcon.sparkles, size: size)
-                .foregroundStyle(palette.mutedForeground)
+                .foregroundStyle(tint)
         }
     }
 
