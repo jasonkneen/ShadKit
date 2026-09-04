@@ -5,6 +5,12 @@ import XCTest
 /// coverage. Streaming is the hard case: the document is always truncated.
 final class MarkdownBlockTests: XCTestCase {
 
+    /// Builds a flat, depth-0 `.list` block for tests that don't care about
+    /// nesting.
+    private func flatList(_ texts: [String], isOrdered: Bool) -> AIMarkdownBlock {
+        .list(texts.map { AIMarkdownListItem(text: $0, depth: 0, isOrdered: isOrdered) })
+    }
+
     func testHeadingsByLevel() {
         let blocks = AIMarkdownBlock.parse("# One\n\n### Three")
         XCTAssertEqual(blocks, [.heading(level: 1, text: "One"), .heading(level: 3, text: "Three")])
@@ -30,7 +36,7 @@ final class MarkdownBlockTests: XCTestCase {
         for marker in ["-", "*", "+"] {
             XCTAssertEqual(
                 AIMarkdownBlock.parse("\(marker) a\n\(marker) b"),
-                [.list(items: ["a", "b"], isOrdered: false)],
+                [flatList(["a", "b"], isOrdered: false)],
                 "marker \(marker)")
         }
     }
@@ -38,7 +44,7 @@ final class MarkdownBlockTests: XCTestCase {
     func testOrderedList() {
         XCTAssertEqual(
             AIMarkdownBlock.parse("1. first\n2. second"),
-            [.list(items: ["first", "second"], isOrdered: true)])
+            [flatList(["first", "second"], isOrdered: true)])
     }
 
     func testSwitchingListKindStartsANewBlock() {
@@ -46,8 +52,8 @@ final class MarkdownBlockTests: XCTestCase {
         XCTAssertEqual(
             blocks,
             [
-                .list(items: ["bullet"], isOrdered: false),
-                .list(items: ["number"], isOrdered: true),
+                flatList(["bullet"], isOrdered: false),
+                flatList(["number"], isOrdered: true),
             ])
     }
 
@@ -95,7 +101,7 @@ final class MarkdownBlockTests: XCTestCase {
             [
                 .heading(level: 1, text: "Title"),
                 .paragraph("intro"),
-                .list(items: ["a", "b"], isOrdered: false),
+                flatList(["a", "b"], isOrdered: false),
                 .code("code", language: "swift"),
                 .quote("note"),
             ])
@@ -104,6 +110,69 @@ final class MarkdownBlockTests: XCTestCase {
     func testProseInterruptingAListClosesIt() {
         let blocks = AIMarkdownBlock.parse("- a\nnot an item")
         XCTAssertEqual(
-            blocks, [.list(items: ["a"], isOrdered: false), .paragraph("not an item")])
+            blocks, [flatList(["a"], isOrdered: false), .paragraph("not an item")])
+    }
+
+    // MARK: - Nested lists
+
+    func testNestedItemsRecordIncreasingDepth() {
+        let blocks = AIMarkdownBlock.parse("- top\n  - nested\n    - deeper")
+        guard case let .list(items)? = blocks.first else {
+            return XCTFail("expected a single list block")
+        }
+        XCTAssertEqual(items.map(\.depth), [0, 1, 2])
+        XCTAssertEqual(items.map(\.text), ["top", "nested", "deeper"])
+    }
+
+    func testNestedItemOfADifferentKindStaysInTheSameBlockAsItsParent() {
+        let blocks = AIMarkdownBlock.parse("1. top\n   - nested bullet")
+        XCTAssertEqual(blocks.count, 1, "a nested item must not start a new block")
+        guard case let .list(items)? = blocks.first else {
+            return XCTFail("expected a single list block")
+        }
+        XCTAssertEqual(items.map(\.isOrdered), [true, false])
+    }
+
+    func testTwoTopLevelListsOfDifferentKindsStayTwoBlocks() {
+        let blocks = AIMarkdownBlock.parse("- bullet\n1. number")
+        XCTAssertEqual(blocks.count, 2)
+    }
+
+    // MARK: - Tables
+
+    func testTableWithAlignmentsAndRows() {
+        let blocks = AIMarkdownBlock.parse(
+            "| Left | Center | Right |\n|:---|:---:|---:|\n| a | b | c |")
+        XCTAssertEqual(
+            blocks,
+            [
+                .table(
+                    headers: ["Left", "Center", "Right"],
+                    alignments: [.leading, .center, .trailing],
+                    rows: [["a", "b", "c"]]),
+            ])
+    }
+
+    func testTableWithoutExplicitAlignmentDefaultsToLeading() {
+        let blocks = AIMarkdownBlock.parse("| A | B |\n|---|---|\n| 1 | 2 |")
+        XCTAssertEqual(
+            blocks,
+            [.table(headers: ["A", "B"], alignments: [.leading, .leading], rows: [["1", "2"]])])
+    }
+
+    func testMismatchedHeaderAndDelimiterColumnCountsIsNotATable() {
+        let blocks = AIMarkdownBlock.parse("| A | B |\n|---|\n| 1 | 2 |")
+        XCTAssertTrue(blocks.allSatisfy {
+            if case .table = $0 { return false }
+            return true
+        })
+    }
+
+    func testHeaderWithoutADelimiterRowIsNotATable() {
+        let blocks = AIMarkdownBlock.parse("| Name | Age |\nAlice")
+        XCTAssertTrue(blocks.allSatisfy {
+            if case .table = $0 { return false }
+            return true
+        })
     }
 }

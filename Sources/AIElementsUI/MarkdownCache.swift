@@ -41,16 +41,25 @@ enum AIMarkdownCache {
         return cache
     }()
 
-    static func blocks(for source: String) -> [AIMarkdownBlock] {
-        blocksBox(for: source).blocks
+    static func blocks(for source: String, width: CGFloat? = nil) -> [AIMarkdownBlock] {
+        blocksBox(for: source, width: width).blocks
     }
 
-    static func blocksBox(for source: String) -> BlocksBox {
-        let key = source as NSString
+    /// `width` only widens the cache key — parsing itself never reads it —
+    /// for a caller whose own rendering (e.g. a wide-table degradation
+    /// decision) genuinely varies with available width and would otherwise
+    /// collide on a source-only key. Omitting it matches 0.3.x exactly.
+    static func blocksBox(for source: String, width: CGFloat? = nil) -> BlocksBox {
+        let key = cacheKey(source: source, width: width)
         if let hit = blockCache.object(forKey: key) { return hit }
         let box = BlocksBox(AIMarkdownBlock.parse(source))
         blockCache.setObject(box, forKey: key)
         return box
+    }
+
+    private static func cacheKey(source: String, width: CGFloat?) -> NSString {
+        guard let width else { return source as NSString }
+        return "\(source)\u{0}\(Int(width.rounded()))" as NSString
     }
 
     static func inline(_ text: String) -> AttributedString {

@@ -17,6 +17,12 @@ public struct AICodeBlock: View {
     private let language: String?
     private let showLineNumbers: Bool
     private let isStreaming: Bool
+    /// Overrides the mono family this one block renders in — `nil` keeps
+    /// `theme.typography.mono`'s family (the shared UI mono font).
+    private let fontFamily: String?
+    /// Derives token colours from the active `ShadcnPalette`'s chart ramp
+    /// instead of the fixed Shiki one-light/one-dark-pro hexes.
+    private let usesPaletteColors: Bool
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -29,12 +35,23 @@ public struct AICodeBlock: View {
         code: String,
         language: String? = nil,
         showLineNumbers: Bool = false,
-        isStreaming: Bool = false
+        isStreaming: Bool = false,
+        fontFamily: String? = nil,
+        usesPaletteColors: Bool = false
     ) {
         self.code = code
         self.language = language
         self.showLineNumbers = showLineNumbers
         self.isStreaming = isStreaming
+        self.fontFamily = fontFamily
+        self.usesPaletteColors = usesPaletteColors
+    }
+
+    private var codeFont: Font {
+        if let fontFamily {
+            return .custom(fontFamily, size: theme.typography.sm.size)
+        }
+        return theme.typography.mono(theme.typography.sm)
     }
 
     private var lines: [String] {
@@ -68,13 +85,15 @@ public struct AICodeBlock: View {
                                 HStack(alignment: .top, spacing: 0) {
                                     if showLineNumbers {
                                         Text("\(index + 1)")
-                                            .font(theme.typography.mono(theme.typography.sm))
+                                            .font(codeFont)
                                             .foregroundStyle(palette.mutedForeground)
                                             .frame(minWidth: 40, alignment: .trailing)
                                             .padding(.trailing, Space.x4)
                                             .textSelection(.disabled)
                                     }
-                                    AISyntaxLine(line: line, language: language)
+                                    AISyntaxLine(
+                                        line: line, language: language,
+                                        fontFamily: fontFamily, usesPaletteColors: usesPaletteColors)
                                 }
                             }
                         }
@@ -220,20 +239,26 @@ public enum AICodeBlockPreview {
 private struct AISyntaxLine: View {
     let line: String
     let language: String?
+    var fontFamily: String? = nil
+    var usesPaletteColors: Bool = false
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
 
     var body: some View {
-        let scheme = AISyntaxTheme.scheme(isDark: palette.isDark)
+        let scheme = usesPaletteColors
+            ? AISyntaxTheme.derived(from: palette)
+            : AISyntaxTheme.scheme(isDark: palette.isDark)
         let tokens = AISyntaxHighlighter.tokenize(line, language: language)
+        let font = fontFamily.map { Font.custom($0, size: theme.typography.sm.size) }
+            ?? theme.typography.mono(theme.typography.sm)
 
         tokens.reduce(Text("")) { partial, token in
             partial + Text(token.text)
                 .foregroundColor(scheme.color(for: token.kind))
                 .italic(token.kind == .comment)
         }
-        .font(theme.typography.mono(theme.typography.sm))
+        .font(font)
         .fixedSize(horizontal: true, vertical: false)
     }
 }
@@ -300,6 +325,22 @@ struct AISyntaxTheme {
 
     static func scheme(isDark: Bool) -> AISyntaxTheme {
         isDark ? .oneDarkPro : .oneLight
+    }
+
+    /// Derives token colours from the active `ShadcnPalette`'s chart ramp
+    /// instead of Shiki's fixed one-light/one-dark-pro hexes — for a caller
+    /// whose theme should govern code the same way it governs everything
+    /// else.
+    static func derived(from palette: ShadcnPalette) -> AISyntaxTheme {
+        AISyntaxTheme(
+            plain: palette.foreground,
+            keyword: palette.chart5,
+            string: palette.chart2,
+            number: palette.chart4,
+            comment: palette.mutedForeground,
+            function: palette.chart1,
+            type: palette.chart3
+        )
     }
 }
 

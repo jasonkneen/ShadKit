@@ -495,6 +495,29 @@ struct ContentDemo: View {
             .frame(maxWidth: 620)
         }
 
+        GalleryBlock("Response — tables, nested lists, palette code colours") {
+            AIResponse(
+                """
+                | Step | Input | Output |
+                |:---|:---:|---:|
+                | 1 | OKLCH | OKLab |
+                | 2 | OKLab | Linear sRGB |
+
+                1. Convert the token set
+                   - Read the CSS variables
+                   - Parse each `oklch()` call
+                2. Port the primitive set
+
+                ```swift
+                let x = 1 // palette-driven colours
+                ```
+                """,
+                width: 620,
+                usesPaletteCodeColours: true
+            )
+            .frame(maxWidth: 620)
+        }
+
         GalleryBlock("Code block") {
             AICodeBlock(
                 code: """
