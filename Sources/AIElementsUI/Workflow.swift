@@ -1,3 +1,4 @@
+import Foundation
 import ShadcnUI
 import SwiftUI
 
@@ -1108,15 +1109,110 @@ public struct AIContextGauge: View {
 /// A model the user can pick.
 public struct AIModelOption: Identifiable, Hashable, Sendable {
     public let id: String
+    /// Canonical model identity, independent of a row's section-specific ID.
+    public let selectionID: String
     public let name: String
     public let provider: String
     public let systemImage: String?
 
-    public init(id: String, name: String, provider: String, systemImage: String? = nil) {
+    public init(id: String, name: String, provider: String, systemImage: String? = nil, selectionID: String? = nil) {
         self.id = id
+        self.selectionID = selectionID ?? id
         self.name = name
         self.provider = provider
         self.systemImage = systemImage
+    }
+}
+
+struct AIModelSelectorSection: Identifiable {
+    let provider: String
+    let models: [AIModelOption]
+    var id: String { provider }
+}
+
+/// Deterministic fuzzy matching for model palettes. Exact substrings win;
+/// otherwise compact subsequences match names such as `gpt56` to `GPT-5.6`
+/// and tolerate abbreviated searches such as `qwn max`.
+enum AIModelSelectorSearch {
+    static func sections(_ models: [AIModelOption], query: String) -> [AIModelSelectorSection] {
+        let matches = ranked(models, query: query)
+        let grouped = Dictionary(grouping: matches, by: \.provider)
+        var providers: [String] = []
+        if normalized(query).isEmpty {
+            providers = grouped.keys.sorted()
+        } else {
+            var seen = Set<String>()
+            providers = matches.compactMap { seen.insert($0.provider).inserted ? $0.provider : nil }
+        }
+        return providers.map { AIModelSelectorSection(provider: $0, models: grouped[$0] ?? []) }
+    }
+
+    static func ranked(_ models: [AIModelOption], query rawQuery: String) -> [AIModelOption] {
+        let query = normalized(rawQuery)
+        guard !query.isEmpty else { return models }
+
+        let scored: [(model: AIModelOption, score: Int, index: Int)] =
+            models.enumerated().compactMap { index, model in
+                var fieldScores: [Int] = []
+                if let value = score(model.name, query: query) {
+                    fieldScores.append(value)
+                }
+                if let value = score(model.id, query: query) {
+                    fieldScores.append(value + 12)
+                }
+                if let value = score(model.provider, query: query) {
+                    fieldScores.append(value + 24)
+                }
+                guard let best = fieldScores.min() else { return nil }
+                return (model: model, score: best, index: index)
+            }
+
+        return scored
+        .sorted {
+            $0.score == $1.score ? $0.index < $1.index : $0.score < $1.score
+        }
+        .map(\.model)
+    }
+
+    private static func score(_ rawCandidate: String, query: String) -> Int? {
+        let candidate = normalized(rawCandidate)
+        if let range = candidate.range(of: query) {
+            let offset = candidate.distance(from: candidate.startIndex, to: range.lowerBound)
+            let startsAtBoundary: Bool
+            if range.lowerBound == candidate.startIndex {
+                startsAtBoundary = true
+            } else {
+                let previous = candidate[candidate.index(before: range.lowerBound)]
+                startsAtBoundary = !previous.isLetter && !previous.isNumber
+            }
+            return offset + (startsAtBoundary ? 0 : 8)
+        }
+
+        let compactCandidate = candidate.filter { $0.isLetter || $0.isNumber }
+        let compactQuery = query.filter { $0.isLetter || $0.isNumber }
+        guard !compactQuery.isEmpty else { return nil }
+
+        var cursor = compactCandidate.startIndex
+        var firstOffset: Int?
+        var previousOffset: Int?
+        var gapCost = 0
+        for character in compactQuery {
+            guard let match = compactCandidate[cursor...].firstIndex(of: character) else {
+                return nil
+            }
+            let offset = compactCandidate.distance(from: compactCandidate.startIndex, to: match)
+            if firstOffset == nil { firstOffset = offset }
+            if let previousOffset { gapCost += max(0, offset - previousOffset - 1) }
+            previousOffset = offset
+            cursor = compactCandidate.index(after: match)
+        }
+        return 100 + (firstOffset ?? 0) * 2 + gapCost
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -1126,29 +1222,58 @@ public struct AIModelSelector: View {
     private let models: [AIModelOption]
     @Binding private var selection: AIModelOption?
     @Binding private var isPresented: Bool
+    private let width: CGFloat?
+    private let listHeight: CGFloat
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
     @State private var query = ""
+    @State private var highlightedID: String?
 
+    /// Pass `width: nil` to fit the width proposed by a containing panel.
     public init(
         models: [AIModelOption],
         selection: Binding<AIModelOption?>,
-        isPresented: Binding<Bool>
+        isPresented: Binding<Bool>,
+        width: CGFloat? = 420,
+        listHeight: CGFloat = 320
     ) {
         self.models = models
         self._selection = selection
         self._isPresented = isPresented
+        self.width = width.map { max($0, 240) }
+        self.listHeight = max(listHeight, 120)
     }
 
-    private var filtered: [String: [AIModelOption]] {
-        let matches = query.isEmpty
-            ? models
-            : models.filter {
-                $0.name.localizedCaseInsensitiveContains(query)
-                    || $0.provider.localizedCaseInsensitiveContains(query)
-            }
-        return Dictionary(grouping: matches, by: \.provider)
+    private var sections: [AIModelSelectorSection] {
+        AIModelSelectorSearch.sections(models, query: query)
+    }
+
+    private var visibleModels: [AIModelOption] {
+        sections.flatMap(\.models)
+    }
+
+    private func resetHighlight() {
+        highlightedID = visibleModels.first?.id
+    }
+
+    private func moveHighlight(by offset: Int) {
+        let rows = visibleModels
+        guard !rows.isEmpty else { highlightedID = nil; return }
+        let current = rows.firstIndex { $0.id == highlightedID }
+        let next = current.map { min(max($0 + offset, 0), rows.count - 1) }
+            ?? (offset > 0 ? 0 : rows.count - 1)
+        highlightedID = rows[next].id
+    }
+
+    private func select(_ model: AIModelOption) {
+        selection = model
+        isPresented = false
+    }
+
+    private func submitHighlighted() {
+        guard let model = visibleModels.first(where: { $0.id == highlightedID }) else { return }
+        select(model)
     }
 
     public var body: some View {
@@ -1156,7 +1281,11 @@ public struct AIModelSelector: View {
             HStack(spacing: Space.x2) {
                 ShadcnIconView(ShadcnIcon.search, size: 16)
                     .foregroundStyle(palette.mutedForeground)
-                ShadcnTextField("Search models...", text: $query, autofocus: true)
+                ShadcnTextField(
+                    "Search models...", text: $query,
+                    onMoveUp: { moveHighlight(by: -1) },
+                    onMoveDown: { moveHighlight(by: 1) },
+                    onSubmit: submitHighlighted, autofocus: true)
                     .shadcnBorder(.clear, cornerRadius: 0)
                     .frame(maxWidth: .infinity)
             }
@@ -1165,40 +1294,53 @@ public struct AIModelSelector: View {
 
             ShadcnSeparator()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: Space.x1) {
-                    if filtered.isEmpty {
-                        Text("No models found.")
-                            .font(theme.typography.sans(theme.typography.sm))
-                            .foregroundStyle(palette.mutedForeground)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Space.x6)
-                    }
-                    ForEach(filtered.keys.sorted(), id: \.self) { provider in
-                        ShadcnMenuLabel(provider)
-                        ForEach(filtered[provider] ?? []) { model in
-                            ShadcnMenuItem(
-                                model.name,
-                                systemImage: model.systemImage,
-                                isSelected: model.id == selection?.id
-                            ) {
-                                selection = model
-                                isPresented = false
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Space.x1) {
+                        if sections.isEmpty {
+                            Text("No models found.")
+                                .font(theme.typography.sans(theme.typography.sm))
+                                .foregroundStyle(palette.mutedForeground)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Space.x6)
+                        }
+                        ForEach(sections) { section in
+                            ShadcnMenuLabel(section.provider)
+                            ForEach(section.models) { model in
+                                ShadcnMenuItem(
+                                    model.name,
+                                    systemImage: model.systemImage,
+                                    isSelected: model.selectionID == selection?.selectionID
+                                ) {
+                                    select(model)
+                                }
+                                .background(
+                                    RoundedRectangle(cornerRadius: theme.radius.sm, style: .continuous)
+                                        .fill(model.id == highlightedID ? palette.accent : .clear))
+                                .id(model.id)
+                                .accessibilityIdentifier("model-option:\(model.id)")
+                                .accessibilityValue(model.selectionID == selection?.selectionID ? "Current model" : "")
                             }
                         }
                     }
+                    // Rows fill the panel width and truncate; without this the
+                    // list measured as wide as its longest name and was cut at
+                    // both edges inside a fixed-width panel.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(Space.x1)
                 }
-                // Rows fill the panel width and truncate; without this the
-                // list measured as wide as its longest name and was cut at
-                // both edges inside a fixed-width panel.
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Space.x1)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .frame(height: listHeight)
+                .onChange(of: highlightedID) { _, id in
+                    if let id { proxy.scrollTo(id) }
+                }
             }
-            .frame(maxWidth: .infinity)
-            .clipped()
-            .frame(maxHeight: 320)
         }
-        .frame(width: 420)
+        .frame(width: width)
+        .onAppear { resetHighlight() }
+        .onChange(of: query) { _, _ in resetHighlight() }
+        .onChange(of: models) { _, _ in resetHighlight() }
     }
 }
 
@@ -1271,7 +1413,7 @@ public struct AICompactModelPicker<Accessory: View>: View {
                         }
                         Spacer(minLength: Space.x2)
                         accessory(model)
-                        if model.id == selection?.id {
+                        if model.selectionID == selection?.selectionID {
                             ShadcnIconView(ShadcnIcon.check, size: 12)
                                 .foregroundStyle(palette.primary)
                         }

@@ -14,6 +14,8 @@ public struct ShadcnTextField: View {
     @Binding private var text: String
     private let isSecure: Bool
     private let onSubmit: (() -> Void)?
+    private let onMoveUp: (() -> Void)?
+    private let onMoveDown: (() -> Void)?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -26,6 +28,8 @@ public struct ShadcnTextField: View {
         _ placeholder: String,
         text: Binding<String>,
         isSecure: Bool = false,
+        onMoveUp: (() -> Void)? = nil,
+        onMoveDown: (() -> Void)? = nil,
         onSubmit: (() -> Void)? = nil,
         autofocus: Bool = false
     ) {
@@ -34,6 +38,8 @@ public struct ShadcnTextField: View {
         self._text = text
         self.isSecure = isSecure
         self.onSubmit = onSubmit
+        self.onMoveUp = onMoveUp
+        self.onMoveDown = onMoveDown
     }
 
     public var body: some View {
@@ -85,7 +91,9 @@ public struct ShadcnTextField: View {
             textColor: palette.foreground,
             wantsFocus: isFocused,
             onFocusChange: { isFocused = $0 },
-            onSubmit: onSubmit
+            onSubmit: onSubmit,
+            onMoveUp: onMoveUp,
+            onMoveDown: onMoveDown
         )
         #else
         Group {
@@ -98,6 +106,16 @@ public struct ShadcnTextField: View {
         .textFieldStyle(.plain)
         .focused($isFocused)
         .onSubmit { onSubmit?() }
+        .onKeyPress(.upArrow) {
+            guard let onMoveUp else { return .ignored }
+            onMoveUp()
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            guard let onMoveDown else { return .ignored }
+            onMoveDown()
+            return .handled
+        }
         #endif
     }
 }
@@ -327,6 +345,8 @@ struct ShadcnAppKitTextField: NSViewRepresentable {
     let wantsFocus: Bool
     let onFocusChange: (Bool) -> Void
     let onSubmit: (() -> Void)?
+    var onMoveUp: (() -> Void)? = nil
+    var onMoveDown: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -343,6 +363,7 @@ struct ShadcnAppKitTextField: NSViewRepresentable {
         field.delegate = context.coordinator
         field.target = context.coordinator
         field.action = #selector(Coordinator.commit(_:))
+        field.cell?.sendsActionOnEndEditing = false
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         if let field = field as? ShadcnFocusTextField {
@@ -413,6 +434,27 @@ struct ShadcnAppKitTextField: NSViewRepresentable {
             if parent.text != field.stringValue {
                 parent.text = field.stringValue
             }
+        }
+
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            // The input method owns navigation while it is composing text.
+            guard !textView.hasMarkedText() else { return false }
+            let action: (() -> Void)?
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)):
+                action = parent.onMoveUp
+            case #selector(NSResponder.moveDown(_:)):
+                action = parent.onMoveDown
+            default:
+                return false
+            }
+            guard let action else { return false }
+            action()
+            return true
         }
     }
 }
