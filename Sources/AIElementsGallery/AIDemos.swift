@@ -592,6 +592,12 @@ struct WorkflowDemo: View {
         AIQueueItem(title: "Wire the package into Infinitty", isPending: true),
         AIQueueItem(title: "Screenshot each section", isPending: true, attachments: ["spec.pdf"]),
     ]
+    @State private var compactModelSelection: AIModelOption?
+    private let compactModels: [AIModelOption] = [
+        AIModelOption(id: "opus", name: "Claude Opus 5", provider: "Anthropic", systemImage: ShadcnIcon.sparkles),
+        AIModelOption(id: "sonnet", name: "Claude Sonnet 5", provider: "Anthropic", systemImage: ShadcnIcon.sparkles),
+        AIModelOption(id: "grok", name: "Grok 4", provider: "xAI", systemImage: ShadcnIcon.cpu),
+    ]
     @State private var groupedQueueItems: [AIQueueItem] = [
         AIQueueItem(
             title: "Wire the package into Infinitty", isPending: true,
@@ -742,6 +748,15 @@ struct WorkflowDemo: View {
                 isCollapsible: true
             )
             .frame(maxWidth: 620)
+        }
+
+        GalleryBlock("Compact model picker — 28pt trigger, per-row accessory") {
+            AICompactModelPicker(
+                models: compactModels,
+                selection: $compactModelSelection
+            ) { model in
+                AIContextGauge(fraction: model.id == "opus" ? 0.62 : 0.2)
+            }
         }
 
         GalleryBlock("Checkpoint") {

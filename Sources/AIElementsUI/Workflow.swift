@@ -1077,12 +1077,16 @@ public struct AIContext: View {
 }
 
 /// The little ring that fills as the context window is consumed.
-struct AIContextGauge: View {
+public struct AIContextGauge: View {
     let fraction: Double
 
     @Environment(\.shadcnPalette) private var palette
 
-    var body: some View {
+    public init(fraction: Double) {
+        self.fraction = fraction
+    }
+
+    public var body: some View {
         ZStack {
             Circle()
                 .stroke(palette.muted, lineWidth: 2)
@@ -1183,5 +1187,100 @@ public struct AIModelSelector: View {
             .frame(maxHeight: 320)
         }
         .frame(width: 420)
+    }
+}
+
+/// A compact, anchored alternative to `AIModelSelector`: a 28pt icon
+/// trigger that opens a popover-style row list — no search field, no 420pt
+/// frame — with a trailing per-row accessory slot (e.g. a context-usage
+/// gauge) the caller supplies. `AIModelSelector`'s searchable dialog stays
+/// the default choice; this is for a composer-adjacent trigger with too
+/// little room for it.
+public struct AICompactModelPicker<Accessory: View>: View {
+    private let models: [AIModelOption]
+    @Binding private var selection: AIModelOption?
+    private let accessory: (AIModelOption) -> Accessory
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+    @State private var isPresented = false
+
+    public init(
+        models: [AIModelOption],
+        selection: Binding<AIModelOption?>,
+        @ViewBuilder accessory: @escaping (AIModelOption) -> Accessory
+    ) {
+        self.models = models
+        self._selection = selection
+        self.accessory = accessory
+    }
+
+    public var body: some View {
+        ShadcnDropdownMenu(isPresented: $isPresented, minWidth: 240) {
+            Button {
+                isPresented.toggle()
+            } label: {
+                ZStack {
+                    Circle().fill(palette.muted.opacity(0.6))
+                    if let systemImage = selection?.systemImage {
+                        ShadcnIconView(systemImage, size: 14)
+                    } else {
+                        ShadcnIconView(ShadcnIcon.cpu, size: 14)
+                    }
+                }
+                .foregroundStyle(palette.mutedForeground)
+                .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.shadcnBare)
+            .accessibilityLabel(selection.map { "Model: \($0.name)" } ?? "Choose a model")
+        } content: {
+            rows
+        }
+    }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(models) { model in
+                Button {
+                    selection = model
+                    isPresented = false
+                } label: {
+                    HStack(spacing: Space.x2) {
+                        if let systemImage = model.systemImage {
+                            ShadcnIconView(systemImage, size: 14)
+                                .foregroundStyle(palette.mutedForeground)
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(model.name)
+                                .font(theme.typography.sans(theme.typography.sm))
+                            Text(model.provider)
+                                .font(theme.typography.sans(theme.typography.xs))
+                                .foregroundStyle(palette.mutedForeground)
+                        }
+                        Spacer(minLength: Space.x2)
+                        accessory(model)
+                        if model.id == selection?.id {
+                            ShadcnIconView(ShadcnIcon.check, size: 12)
+                                .foregroundStyle(palette.primary)
+                        }
+                    }
+                    .padding(.horizontal, Space.x2)
+                    .padding(.vertical, Space.x1_5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.shadcnBare)
+            }
+        }
+        .padding(Space.x1)
+    }
+}
+
+extension AICompactModelPicker where Accessory == EmptyView {
+    public init(
+        models: [AIModelOption],
+        selection: Binding<AIModelOption?>
+    ) {
+        self.init(models: models, selection: selection) { _ in EmptyView() }
     }
 }
