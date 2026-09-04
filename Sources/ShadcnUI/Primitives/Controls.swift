@@ -243,15 +243,17 @@ public struct ShadcnTabs<Value: Hashable>: View {
                 Text(item.label)
             }
             .font(theme.typography.sans(labelStep, weight: .medium))
-            .foregroundStyle(isActive ? palette.foreground : palette.foreground.opacity(0.6))
+            .foregroundStyle(isActive ? palette.secondaryForeground : palette.foreground.opacity(0.6))
             .padding(.horizontal, Space.x2)
             .frame(maxHeight: .infinity)
             .background {
                 if isActive {
                     switch variant {
                     case .solid:
+                        // The selected segment is a `secondary` surface, like
+                        // every other selected chip, not the page background.
                         RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                            .fill(palette.background)
+                            .fill(palette.secondary)
                             .shadcnShadow(.sm)
                             .matchedGeometryEffect(id: "tab", in: indicator)
                     case .line:

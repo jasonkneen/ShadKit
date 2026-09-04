@@ -210,6 +210,10 @@ public struct AIMessageContent<Content: View>: View {
                 view
                     .padding(.horizontal, messageStyle.bubbleHorizontalPadding)
                     .padding(.vertical, messageStyle.bubbleVerticalPadding)
+                    // The user bubble is a `secondary` surface, so its text is
+                    // `secondaryForeground`; a palette that inverts the fill
+                    // must not leave foreground-on-fill unreadable.
+                    .foregroundStyle(isUser ? palette.secondaryForeground : palette.foreground)
                     .background(
                         RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
                             .fill(isUser ? palette.secondary : (assistantBubbleTint ?? .clear))

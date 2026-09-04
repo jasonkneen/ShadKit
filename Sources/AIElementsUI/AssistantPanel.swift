@@ -590,7 +590,7 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
     }
 
     private var threadLabelMaxWidth: CGFloat {
-        chrome.density == .compact ? 180 : 240
+        chrome.density == .compact ? 180 : 480
     }
 
     private var activeThreadLabel: String {

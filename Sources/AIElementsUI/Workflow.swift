@@ -51,9 +51,13 @@ public struct AIPlan<Content: View, Footer: View>: View {
         }
         .padding(.vertical, Space.x6)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The same translucent fill menus and dialogs use, so a plan card on
+        // a glass pane reads as glass rather than an opaque slab.
         .background(
-            RoundedRectangle(cornerRadius: theme.radius.xl, style: .continuous)
-                .fill(palette.card)
+            ShadcnTranslucentFill(
+                color: palette.card,
+                cornerRadius: theme.radius.xl,
+                material: .regularMaterial)
         )
         .shadcnBorder(palette.border, cornerRadius: theme.radius.xl)
         .clipped()
