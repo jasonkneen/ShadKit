@@ -159,11 +159,13 @@ public enum AIDiffMode: String, CaseIterable, Sendable {
 }
 
 /// One row of a side-by-side diff: the old-file line, the new-file line, or
-/// both — never neither.
-struct AIDiffSplitPair: Identifiable {
-    let id: Int
-    let old: AIDiffLine?
-    let new: AIDiffLine?
+/// both — never neither. Public so a consumer's own tests can assert on the
+/// pairing `AIDiffView.sideBySidePairs(from:)` produces without needing
+/// `@testable import`.
+public struct AIDiffSplitPair: Identifiable, Sendable {
+    public let id: Int
+    public let old: AIDiffLine?
+    public let new: AIDiffLine?
 }
 
 /// A diff viewer built from the design system.
@@ -284,7 +286,13 @@ public struct AIDiffView: View {
     /// lines appear on both sides identically; a run of removed lines pairs
     /// positionally against the run of added lines that follows it (the
     /// standard side-by-side diff heuristic), with a blank filler row on
-    /// whichever side runs out first.
+    /// whichever side runs out first. Public — the same pairing
+    /// `AIDiffView(mode: .sideBySide)` renders, exposed for a consumer's own
+    /// tests to assert against directly.
+    public static func sideBySidePairs(from lines: [AIDiffLine]) -> [AIDiffSplitPair] {
+        splitPairs(from: lines)
+    }
+
     static func splitPairs(from lines: [AIDiffLine]) -> [AIDiffSplitPair] {
         var pairs: [AIDiffSplitPair] = []
         var index = 0
