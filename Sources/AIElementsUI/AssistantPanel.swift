@@ -410,12 +410,20 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
                     maxWidth: threadLabelMaxWidth,
                     alignment: .leading
                 )
-                .layoutPriority(0)
+                // Ranks above the roster/context/new-chat controls (all
+                // default priority 0, all `.fixedSize` and so unable to
+                // shrink) so their rigid width doesn't crowd the one element
+                // in this bar that both truncates gracefully and is the
+                // primary navigation control — but still ranks below the
+                // accessory, which stays the tie-breaker `AssistantPanelChromeTests`
+                // pins at compact widths (its live run status is the more
+                // urgent of the two when both are genuinely long).
+                .layoutPriority(1)
 
             accessory
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
                 .clipped()
-                .layoutPriority(1)
+                .layoutPriority(2)
 
             // A top-level `if let` here, not a computed property with its own
             // internal branch: `HStack(spacing:)` allocates a spacing slot for

@@ -7,6 +7,7 @@ import SwiftUI
 struct PanelDemo: View {
     @StateObject private var idle = PanelDemo.makeModel(populated: false)
     @StateObject private var live = PanelDemo.makeModel(populated: true)
+    @StateObject private var topBarModel = PanelDemo.makeTopBarModel()
 
     @State private var inspectorOpen = true
     @State private var inspectorWidth: CGFloat = 280
@@ -64,6 +65,26 @@ struct PanelDemo: View {
                 )
                 .frame(width: 380, height: 520)
                 .shadcnBorderedBox()
+            }
+        }
+
+        GalleryBlock("Top bar — thread select keeps its width at narrow panes (U17)") {
+            VStack(alignment: .leading, spacing: Space.x3) {
+                ForEach([320, 480], id: \.self) { width in
+                    VStack(alignment: .leading, spacing: Space.x1) {
+                        Text("\(width)pt")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        AIAssistantPanelTopBar(
+                            model: topBarModel,
+                            chrome: AIAssistantPanelChrome(topBarPlacement: .panel)
+                        ) {
+                            ShadcnBadge("● connected", variant: .outline)
+                        }
+                        .frame(width: CGFloat(width))
+                        .shadcnBorderedBox()
+                    }
+                }
             }
         }
 
@@ -144,6 +165,17 @@ struct PanelDemo: View {
             .frame(height: 420)
             .shadcnBorderedBox()
         }
+    }
+
+    static func makeTopBarModel() -> AIAssistantPanelModel {
+        let model = AIAssistantPanelModel()
+        model.threads = [
+            ShadcnSelectOption(
+                value: "t1", label: "The complete migration plan for the OKLCH token pipeline"),
+            ShadcnSelectOption(value: "t2", label: "Fix flaky test"),
+        ]
+        model.activeThreadId = "t1"
+        return model
     }
 
     static func makeModel(populated: Bool) -> AIAssistantPanelModel {
