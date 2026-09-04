@@ -532,6 +532,17 @@ struct WorkflowDemo: View {
         AIQueueItem(title: "Wire the package into Infinitty", isPending: true),
         AIQueueItem(title: "Screenshot each section", isPending: true, attachments: ["spec.pdf"]),
     ]
+    @State private var groupedQueueItems: [AIQueueItem] = [
+        AIQueueItem(
+            title: "Wire the package into Infinitty", isPending: true,
+            agentLabel: "claude", isRunning: true, isInPlan: true, readBy: ["grok"]),
+        AIQueueItem(
+            title: "Screenshot each section", isPending: true, attachments: ["spec.pdf"],
+            agentLabel: "claude"),
+        AIQueueItem(
+            title: "Draft the CHANGELOG entry", isPending: true,
+            agentLabel: "researcher", isInPlan: true),
+    ]
 
     private static let questions: [AIQuestion] = [
         // `allowsWriteIn: false` (0.3.1) — a strict pick-one with no
@@ -627,6 +638,19 @@ struct WorkflowDemo: View {
                 onSendNow: { id in queueStripItems.removeAll { $0.id == id } },
                 onCancel: { id in queueStripItems.removeAll { $0.id == id } },
                 onMove: { _, _ in }
+            )
+            .frame(maxWidth: 620)
+        }
+
+        GalleryBlock("Queue strip — grouped, receipts, handoff") {
+            AIQueueStrip(
+                items: groupedQueueItems,
+                onEdit: { _ in },
+                onSendNow: { id in groupedQueueItems.removeAll { $0.id == id } },
+                onCancel: { id in groupedQueueItems.removeAll { $0.id == id } },
+                onMove: { _, _ in },
+                onHandoff: { _ in },
+                onAddToPlan: { _ in }
             )
             .frame(maxWidth: 620)
         }

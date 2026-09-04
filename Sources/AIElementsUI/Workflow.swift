@@ -547,6 +547,8 @@ public struct AIQueueStrip: View {
     private let onSendNow: (AIQueueItem.ID) -> Void
     private let onCancel: (AIQueueItem.ID) -> Void
     private let onMove: (AIQueueItem.ID, Int) -> Void
+    private let onHandoff: ((AIQueueItem.ID) -> Void)?
+    private let onAddToPlan: ((AIQueueItem.ID) -> Void)?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -557,13 +559,35 @@ public struct AIQueueStrip: View {
         onEdit: @escaping (AIQueueItem.ID) -> Void = { _ in },
         onSendNow: @escaping (AIQueueItem.ID) -> Void = { _ in },
         onCancel: @escaping (AIQueueItem.ID) -> Void = { _ in },
-        onMove: @escaping (AIQueueItem.ID, Int) -> Void = { _, _ in }
+        onMove: @escaping (AIQueueItem.ID, Int) -> Void = { _, _ in },
+        onHandoff: ((AIQueueItem.ID) -> Void)? = nil,
+        onAddToPlan: ((AIQueueItem.ID) -> Void)? = nil
     ) {
         self.items = items
         self.onEdit = onEdit
         self.onSendNow = onSendNow
         self.onCancel = onCancel
         self.onMove = onMove
+        self.onHandoff = onHandoff
+        self.onAddToPlan = onAddToPlan
+    }
+
+    /// Items grouped by `agentLabel`, in first-seen order; items with no
+    /// label form their own `nil`-keyed group. Only used for rendering when
+    /// at least one item actually carries a label — an all-`nil` queue
+    /// renders as the flat 0.3.x list.
+    private var groups: [(label: String?, items: [AIQueueItem])] {
+        var order: [String?] = []
+        var buckets: [String?: [AIQueueItem]] = [:]
+        for item in items {
+            if buckets[item.agentLabel] == nil { order.append(item.agentLabel) }
+            buckets[item.agentLabel, default: []].append(item)
+        }
+        return order.map { ($0, buckets[$0] ?? []) }
+    }
+
+    private var isGrouped: Bool {
+        items.contains { $0.agentLabel != nil }
     }
 
     /// Items still waiting to run — neither completed nor already sent.
@@ -576,15 +600,19 @@ public struct AIQueueStrip: View {
             header
             if isExpanded {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        AIQueueStripRow(
-                            item: item,
-                            onEdit: { onEdit(item.id) },
-                            onSendNow: { onSendNow(item.id) },
-                            onCancel: { onCancel(item.id) },
-                            onMoveUp: index > 0 ? { onMove(item.id, index - 1) } : nil,
-                            onMoveDown: index < items.count - 1 ? { onMove(item.id, index + 1) } : nil
-                        )
+                    if isGrouped {
+                        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                            if let label = group.label {
+                                Text(label)
+                                    .font(theme.typography.sans(theme.typography.xs, weight: .semibold))
+                                    .foregroundStyle(palette.mutedForeground)
+                                    .padding(.horizontal, Space.x3)
+                                    .padding(.top, Space.x1_5)
+                            }
+                            rows(for: group.items)
+                        }
+                    } else {
+                        rows(for: items)
                     }
                 }
             }
@@ -593,6 +621,23 @@ public struct AIQueueStrip: View {
             ShadcnTranslucentFill(color: palette.background, cornerRadius: theme.radius.lg)
         )
         .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
+    }
+
+    @ViewBuilder
+    private func rows(for rowItems: [AIQueueItem]) -> some View {
+        ForEach(Array(rowItems.enumerated()), id: \.element.id) { index, item in
+            let globalIndex = items.firstIndex { $0.id == item.id } ?? index
+            AIQueueStripRow(
+                item: item,
+                onEdit: { onEdit(item.id) },
+                onSendNow: { onSendNow(item.id) },
+                onCancel: { onCancel(item.id) },
+                onMoveUp: globalIndex > 0 ? { onMove(item.id, globalIndex - 1) } : nil,
+                onMoveDown: globalIndex < items.count - 1 ? { onMove(item.id, globalIndex + 1) } : nil,
+                onHandoff: onHandoff.map { fn in { fn(item.id) } },
+                onAddToPlan: onAddToPlan.map { fn in { fn(item.id) } }
+            )
+        }
     }
 
     private var header: some View {
@@ -624,6 +669,8 @@ struct AIQueueStripRow: View {
     let onCancel: () -> Void
     let onMoveUp: (() -> Void)?
     let onMoveDown: (() -> Void)?
+    var onHandoff: (() -> Void)? = nil
+    var onAddToPlan: (() -> Void)? = nil
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -631,10 +678,28 @@ struct AIQueueStripRow: View {
 
     var body: some View {
         HStack(spacing: Space.x2) {
+            if item.isRunning {
+                AILoader(size: 10)
+                    .foregroundStyle(palette.primary)
+            }
+
             Text(item.title)
                 .font(theme.typography.sans(theme.typography.xs))
                 .foregroundStyle(palette.mutedForeground)
                 .lineLimit(1)
+
+            if item.isInPlan {
+                ShadcnIconView(ShadcnIcon.listTodo, size: 10)
+                    .foregroundStyle(palette.mutedForeground.opacity(0.7))
+            }
+
+            if !item.readBy.isEmpty {
+                Text(item.readBy.joined(separator: ", "))
+                    .font(theme.typography.sans(theme.typography.xs))
+                    .foregroundStyle(palette.mutedForeground.opacity(0.6))
+                    .lineLimit(1)
+            }
+
             Spacer(minLength: 0)
             ShadcnDropdownMenu(isPresented: $isMenuPresented, minWidth: 160) {
                 ShadcnButton(icon: ShadcnIcon.dotsHorizontal, variant: .ghost, size: .iconXS) {
@@ -648,6 +713,18 @@ struct AIQueueStripRow: View {
                 ShadcnMenuItem("Send now", systemImage: ShadcnIcon.arrowUp) {
                     isMenuPresented = false
                     onSendNow()
+                }
+                if let onHandoff {
+                    ShadcnMenuItem("Hand off", systemImage: ShadcnIcon.arrowUpRight) {
+                        isMenuPresented = false
+                        onHandoff()
+                    }
+                }
+                if let onAddToPlan {
+                    ShadcnMenuItem("Add to plan", systemImage: ShadcnIcon.listTodo) {
+                        isMenuPresented = false
+                        onAddToPlan()
+                    }
                 }
                 if let onMoveUp {
                     ShadcnMenuItem("Move up", systemImage: ShadcnIcon.chevronUp) {
@@ -688,6 +765,14 @@ public struct AIQueueItem: Identifiable, Sendable {
     /// can disagree for your model (e.g. a cancelled-but-uncompleted item).
     public let explicitIsPending: Bool?
     public let attachments: [String]
+    /// Groups `AIQueueStrip` rows under a label when at least one item in
+    /// the strip sets this; `nil` keeps the flat 0.3.x list.
+    public let agentLabel: String?
+    public let isRunning: Bool
+    public let isInPlan: Bool
+    /// Names of agents who have seen this item — a lightweight read
+    /// receipt, rendered as a comma list next to the row.
+    public let readBy: [String]
 
     /// `isCompleted` and `isPending` independently constructible was the
     /// underlying design problem; this computed property is the one place
@@ -700,7 +785,11 @@ public struct AIQueueItem: Identifiable, Sendable {
         description: String? = nil,
         isCompleted: Bool = false,
         isPending: Bool? = nil,
-        attachments: [String] = []
+        attachments: [String] = [],
+        agentLabel: String? = nil,
+        isRunning: Bool = false,
+        isInPlan: Bool = false,
+        readBy: [String] = []
     ) {
         self.id = id
         self.title = title
@@ -708,6 +797,10 @@ public struct AIQueueItem: Identifiable, Sendable {
         self.isCompleted = isCompleted
         self.explicitIsPending = isPending
         self.attachments = attachments
+        self.agentLabel = agentLabel
+        self.isRunning = isRunning
+        self.isInPlan = isInPlan
+        self.readBy = readBy
     }
 }
 
