@@ -35,13 +35,13 @@ public struct AIPromptPillButton: View {
                 }
             }
             .padding(.horizontal, title == nil ? 0 : Space.x1)
-            // Icon-only: a true circle, not a short capsule.
-            .frame(width: title == nil ? 32 : nil, height: 32)
         }
         .buttonStyle(
             ShadcnButtonStyle(
                 variant: isActive ? .secondary : variant,
-                size: .small,
+                // Icon-only is a square icon size, which with the full radius
+                // is a true circle rather than a short capsule.
+                size: title == nil ? .iconSM : .small,
                 hasIcon: true,
                 cornerRadius: theme.radius.full
             )

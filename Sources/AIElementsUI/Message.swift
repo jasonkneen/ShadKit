@@ -194,6 +194,15 @@ public struct AIMessageContent<Content: View>: View {
     }
 
     private var isUser: Bool { role == .user }
+    /// The palette inside a user bubble: the bubble is `secondary`, so text
+    /// and muted text come from `secondaryForeground`.
+    private var userBubblePalette: ShadcnPalette {
+        var p = palette
+        p.foreground = palette.secondaryForeground
+        p.mutedForeground = palette.secondaryForeground.opacity(0.7)
+        p.cardForeground = palette.secondaryForeground
+        return p
+    }
 
     public var body: some View {
         // `w-fit` — the bubble hugs its text and is pushed to the trailing edge
@@ -210,10 +219,11 @@ public struct AIMessageContent<Content: View>: View {
                 view
                     .padding(.horizontal, messageStyle.bubbleHorizontalPadding)
                     .padding(.vertical, messageStyle.bubbleVerticalPadding)
-                    // The user bubble is a `secondary` surface, so its text is
-                    // `secondaryForeground`; a palette that inverts the fill
-                    // must not leave foreground-on-fill unreadable.
-                    .foregroundStyle(isUser ? palette.secondaryForeground : palette.foreground)
+                    // The user bubble is a `secondary` surface, so everything
+                    // inside it — markdown included, which paints its own
+                    // colours from the palette — sees a palette whose
+                    // foreground is `secondaryForeground`.
+                    .environment(\.shadcnPalette, isUser ? userBubblePalette : palette)
                     .background(
                         RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
                             .fill(isUser ? palette.secondary : (assistantBubbleTint ?? .clear))
