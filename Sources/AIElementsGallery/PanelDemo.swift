@@ -65,11 +65,12 @@ struct PanelDemo: View {
         }
 
         GalleryBlock("Inspector — Session / Usage / Files") {
-            // Docked the way it's meant to be used: `AIInspector` sizes
-            // itself to the width binding it's given but has no drag
-            // gesture of its own, so the handle, live resize and
-            // collapse-to-icon-rail only show up once it's the sidebar of a
-            // `ShadcnResizeSplit`.
+            // Docked the way it's meant to be used: `AIInspector` now owns
+            // its own leading-edge drag handle (0.3.1) and writes `width`
+            // directly, and collapse-to-icon-rail is its own `isOpen`
+            // toggle. Nesting it in a `ShadcnResizeSplit` here still works
+            // — both write the same binding — but is no longer required
+            // just to get a working handle.
             ShadcnResizeSplit(width: $inspectorWidth, defaultWidth: 280, minWidth: 220, maxWidth: 420, edge: .trailing) {
                 AIInspector(
                     isOpen: $inspectorOpen,

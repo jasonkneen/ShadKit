@@ -167,6 +167,7 @@ public struct AnyAICodeBlockPreviewRenderer {
     /// only ever calls this from its (main-actor) `body`.
     let render: @MainActor (String, String) -> AnyView
 
+    @MainActor
     public init<R: AICodeBlockPreviewRenderer>(_ renderer: R) {
         self.render = { source, language in
             AnyView(renderer.preview(for: source, language: language))

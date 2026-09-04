@@ -427,7 +427,9 @@ struct OverlaysDemo: View {
         }
 
         GalleryBlock("Resize split") {
-            ShadcnResizeSplit(width: $sidebarWidth) {
+            // The collapse shortcut is opt-in as of 0.3.1 — pass it
+            // explicitly to keep demoing ⌘B here.
+            ShadcnResizeSplit(width: $sidebarWidth, collapseShortcut: "b") {
                 VStack(alignment: .leading, spacing: Space.x1) {
                     Text("Sidebar").font(.system(size: 12, weight: .semibold))
                     Text("Drag the handle, or ⌘B to collapse.").font(.system(size: 11))

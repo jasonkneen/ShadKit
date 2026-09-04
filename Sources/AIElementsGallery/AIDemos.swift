@@ -511,7 +511,13 @@ struct WorkflowDemo: View {
     ]
 
     private static let questions: [AIQuestion] = [
-        AIQuestion(prompt: "Which registry should this match?", kind: .choice(["shadcn/ui", "AI Elements"])),
+        // `allowsWriteIn: false` (0.3.1) — a strict pick-one with no
+        // "Other…" field, for questions that forbid a free-text answer.
+        AIQuestion(
+            prompt: "Which registry should this match?",
+            kind: .choice(["shadcn/ui", "AI Elements"]),
+            allowsWriteIn: false
+        ),
         AIQuestion(prompt: "Which platforms need coverage?", kind: .multiSelect(["macOS", "iOS", "visionOS"])),
         AIQuestion(prompt: "Should the port stay dependency-free?", kind: .confirm),
     ]
@@ -559,7 +565,10 @@ struct WorkflowDemo: View {
                 tool: "run_tests",
                 reason: "Verifying the port before merge",
                 detail: "swift test --filter WorkflowTests",
-                onApproveScoped: { _ in }
+                onApproveScoped: { _ in },
+                // `availableScopes` (0.3.1) — this broker only ever accepts
+                // once/session, so `.always` never shows in the dropdown.
+                availableScopes: [.once, .session]
             )
             .frame(maxWidth: 620)
         }
