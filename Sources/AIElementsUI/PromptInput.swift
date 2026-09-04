@@ -135,10 +135,20 @@ public struct AIPromptInputAttachments: View {
 
     private let items: [Item]
     private let onRemove: (String) -> Void
+    /// A per-item accessibility identifier — `nil` (the default) leaves the
+    /// chip with whatever identifier `AIAttachmentChip` sets on its own,
+    /// unchanged from 0.3.x. Lets a caller attach something stable like
+    /// `chat.attachment.remove.<id>` for UI-test targeting.
+    private let accessibilityIdentifier: ((Item) -> String?)?
 
-    public init(items: [Item], onRemove: @escaping (String) -> Void) {
+    public init(
+        items: [Item],
+        onRemove: @escaping (String) -> Void,
+        accessibilityIdentifier: ((Item) -> String?)? = nil
+    ) {
         self.items = items
         self.onRemove = onRemove
+        self.accessibilityIdentifier = accessibilityIdentifier
     }
 
     public var body: some View {
@@ -154,6 +164,9 @@ public struct AIPromptInputAttachments: View {
                             errorText: item.errorText,
                             onRemove: { onRemove(item.id) }
                         )
+                        .applyIf(accessibilityIdentifier?(item) != nil) { view in
+                            view.accessibilityIdentifier(accessibilityIdentifier!(item)!)
+                        }
                     }
                 }
                 .padding(.bottom, Space.x1)

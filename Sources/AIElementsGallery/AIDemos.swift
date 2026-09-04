@@ -235,9 +235,11 @@ struct PromptDemo: View {
                 onSubmit: {},
                 onPaletteSelect: { _, _ in }
             ) {
-                AIPromptInputAttachments(items: attachments) { id in
-                    attachments.removeAll { $0.id == id }
-                }
+                AIPromptInputAttachments(
+                    items: attachments,
+                    onRemove: { id in attachments.removeAll { $0.id == id } },
+                    accessibilityIdentifier: { item in "chat.attachment.remove.\(item.id)" }
+                )
             } tools: {
                 AIPromptInputButton(systemImage: ShadcnIcon.plus, tooltip: "Add attachment") {}
             } trailing: {
