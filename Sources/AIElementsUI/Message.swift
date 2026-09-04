@@ -224,6 +224,9 @@ public struct AIMessageContent<Content: View>: View {
                     // colours from the palette — sees a palette whose
                     // foreground is `secondaryForeground`.
                     .environment(\.shadcnPalette, isUser ? userBubblePalette : palette)
+                    // Explicit as well: text with no colour of its own inherits
+                    // the row's foreground from outside the bubble otherwise.
+                    .foregroundStyle(isUser ? palette.secondaryForeground : palette.foreground)
                     .background(
                         RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
                             .fill(isUser ? palette.secondary : (assistantBubbleTint ?? .clear))
