@@ -73,6 +73,9 @@ struct ShadcnTooltipModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
+        #if os(macOS)
+        content.help(text)
+        #else
         content
             .onHover { hovering in
                 isHovering = hovering
@@ -95,6 +98,7 @@ struct ShadcnTooltipModifier: ViewModifier {
                 }
             }
             .zIndex(isVisible ? 1000 : 0)
+        #endif
     }
 
     private var offset: CGSize {
@@ -429,7 +433,7 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
                 .fixedSize()
                 .environment(\.shadcnTheme, theme)
                 .environment(\.shadcnPalette, palette)
-                .environment(\.shadcnSurfaceOpacity, surfaceOpacity)
+                .environment(\.shadcnSurfaceOpacity, glassEnabled ? surfaceOpacity : 1)
                 .environment(\.shadcnGlassEnabled, glassEnabled)
                 .environment(\.colorScheme, colorScheme)
         }
@@ -931,7 +935,7 @@ struct ShadcnDialogModifier<DialogContent: View>: ViewModifier {
             }
             .environment(\.shadcnTheme, theme)
             .environment(\.shadcnPalette, palette)
-            .environment(\.shadcnSurfaceOpacity, surfaceOpacity)
+            .environment(\.shadcnSurfaceOpacity, glassEnabled ? surfaceOpacity : 1)
             .environment(\.shadcnGlassEnabled, glassEnabled)
             .environment(\.colorScheme, colorScheme)
         }

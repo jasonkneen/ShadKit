@@ -679,7 +679,7 @@ extension AIPromptInput where Header == EmptyView, Tools == EmptyView, Trailing 
 /// Glyphs specific to the composer.
 public enum AIPromptIcon {
     /// `CornerDownLeftIcon` — the return-key arrow on the submit button.
-    public static let submit = "arrow.turn.down.left"
+    public static let submit = "arrow.up"
 }
 
 /// `PromptInputButton` — a ghost `icon-sm` tool button for the composer footer.

@@ -684,7 +684,7 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
     private func contextControl(_ aggregate: Double) -> some View {
         HStack(spacing: Space.x1) {
             AIContextGauge(fraction: aggregate)
-            Text(aggregate.formatted(.percent.precision(.fractionLength(0))))
+            Text(aggregate.formatted(.percent.precision(.fractionLength(0))) + " context")
                 .font(theme.typography.sans(theme.typography.xs))
                 .foregroundStyle(palette.mutedForeground)
         }

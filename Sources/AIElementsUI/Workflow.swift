@@ -1022,8 +1022,8 @@ public struct AIContext: View {
             } label: {
                 HStack(spacing: Space.x1_5) {
                     AIContextGauge(fraction: usage.usedFraction)
-                    Text(usage.usedFraction.formatted(.percent.precision(.fractionLength(0))))
-                        .font(theme.typography.sans(theme.typography.sm, weight: .medium))
+                    Text(usage.usedFraction.formatted(.percent.precision(.fractionLength(0))) + " context")
+                        .font(theme.typography.sans(theme.typography.xs, weight: .medium))
                         .foregroundStyle(palette.mutedForeground)
                 }
                 .contentShape(Rectangle())

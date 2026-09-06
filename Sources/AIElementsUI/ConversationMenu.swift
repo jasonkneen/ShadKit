@@ -128,7 +128,8 @@ struct AIConversationMenu: NSViewRepresentable {
             )
             .environment(\.shadcnTheme, theme)
             .environment(\.shadcnPalette, palette)
-            .environment(\.shadcnSurfaceOpacity, surfaceOpacity)
+            .environment(\.shadcnSurfaceOpacity, glassEnabled ? surfaceOpacity : 1)
+            .environment(\.shadcnHostProvidesGlass, false)
             .environment(\.shadcnGlassEnabled, glassEnabled)
             .environment(\.colorScheme, palette.isDark ? .dark : .light)
         }
@@ -379,7 +380,7 @@ final class AIConversationMenuButton: NSButton {
         alignment = .left
         lineBreakMode = .byTruncatingTail
         image = NSImage(
-            systemSymbolName: "chevron.down",
+            systemSymbolName: "clock.arrow.circlepath",
             accessibilityDescription: nil)
         symbolConfiguration = NSImage.SymbolConfiguration(
             pointSize: 9, weight: .semibold)
