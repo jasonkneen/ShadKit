@@ -200,6 +200,7 @@ public struct ShadcnPlainTextEditor: View {
     var focus: FocusState<Bool>.Binding?
     /// Overrides the palette foreground. Nil keeps the theme colour.
     var textColor: Color?
+    var placeholderColor: Color?
     /// Return without Shift submits (composer). Shift+Return inserts a newline.
     var onSubmit: (() -> Void)?
 
@@ -216,6 +217,7 @@ public struct ShadcnPlainTextEditor: View {
         font: Font? = nil,
         fontSize: CGFloat? = nil,
         textColor: Color? = nil,
+        placeholderColor: Color? = nil,
         focus: FocusState<Bool>.Binding? = nil,
         onSubmit: (() -> Void)? = nil
     ) {
@@ -226,6 +228,7 @@ public struct ShadcnPlainTextEditor: View {
         self.font = font
         self.fontSize = fontSize
         self.textColor = textColor
+        self.placeholderColor = placeholderColor
         self.focus = focus
         self.onSubmit = onSubmit
     }
@@ -251,7 +254,7 @@ public struct ShadcnPlainTextEditor: View {
             if text.isEmpty {
                 Text(placeholder)
                     .font(resolvedFont)
-                    .foregroundStyle(palette.mutedForeground)
+                    .foregroundStyle(placeholderColor ?? palette.mutedForeground)
                     // Match the NSTextView text inset so the placeholder
                     // doesn't jump when typing starts.
                     .padding(.leading, 5)

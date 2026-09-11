@@ -77,7 +77,7 @@ public struct AIMessageView: View {
             }
             if message.role == .assistant, let author = message.author {
                 Text(author)
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Response from \(author)")
             }
@@ -204,8 +204,8 @@ private struct AIRelativeTimestamp: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             Text(Self.label(for: date, now: context.date))
-                .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(.secondary.opacity(0.72))
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(.secondary)
                 .help(date.formatted(date: .abbreviated, time: .shortened))
                 .accessibilityLabel(
                     "Sent \(date.formatted(date: .complete, time: .shortened))")

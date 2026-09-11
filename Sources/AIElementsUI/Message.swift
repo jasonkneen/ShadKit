@@ -280,7 +280,7 @@ public struct AIMessageAction: View {
     }
 
     public var body: some View {
-        ShadcnButton(icon: systemImage, variant: .ghost, size: .iconXS, action: action)
+        ShadcnButton(icon: systemImage, variant: .ghost, size: .iconSM, action: action)
             .shadcnTooltip(tooltip)
             .accessibilityLabel(tooltip)
     }

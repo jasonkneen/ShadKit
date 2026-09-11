@@ -3,11 +3,11 @@ import XCTest
 
 final class ConversationStyleTests: XCTestCase {
 
-    func testStandardConversationStylePreservesExistingMetrics() {
+    func testStandardConversationStyleKeepsRelatedTurnsClose() {
         XCTAssertEqual(
             AIConversationStyle.standard,
             AIConversationStyle(
-                itemSpacing: 32,
+                itemSpacing: 16,
                 horizontalPadding: 16,
                 verticalPadding: 16,
                 bottomTolerance: 8
@@ -19,7 +19,7 @@ final class ConversationStyleTests: XCTestCase {
         XCTAssertEqual(
             AIConversationStyle.compact,
             AIConversationStyle(
-                itemSpacing: 16,
+                itemSpacing: 12,
                 horizontalPadding: 16,
                 verticalPadding: 16,
                 bottomTolerance: 8

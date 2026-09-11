@@ -367,7 +367,7 @@ public struct AISources: View {
     public var body: some View {
         ShadcnDisclosure(defaultOpen: defaultOpen, spacing: Space.x3) { isOpen in
             HStack(spacing: Space.x2) {
-                Text("Used \(sources.count) sources")
+                Text("Used \(sources.count) \(sources.count == 1 ? "source" : "sources")")
                     .font(theme.typography.sans(theme.typography.xs, weight: .medium))
                 ShadcnDisclosureChevron(isOpen: isOpen)
                 Spacer(minLength: 0)

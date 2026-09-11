@@ -603,10 +603,8 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
 
     @ViewBuilder
     private var threadControl: some View {
-        // AppKit NSMenu, rebuilt from `model.threads` on every update.
-        // SwiftUI `Menu { ForEach }` inside the hosted Chat pane captured an
-        // empty list on first render and never showed restored conversations.
-        conversationMenuChrome {
+        HStack(spacing: Space.x2) {
+            conversationMenuChrome {
             #if canImport(AppKit)
             AIConversationMenu(
                 threads: model.conversations.isEmpty
@@ -637,33 +635,31 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
                 if !model.threads.isEmpty { Divider() }
                 Button("New chat") { model.startNewChat() }
             } label: {
-                HStack(spacing: Space.x1) {
-                    Text(activeThreadLabel)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    ShadcnIconView(ShadcnIcon.chevronDown, size: 10)
-                        .foregroundStyle(palette.mutedForeground)
-                }
+                Image(systemName: "square.stack")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             #endif
+            }
+            .accessibilityLabel("Sessions")
+            .accessibilityHint("Choose a session or start a new one")
+            .accessibilityIdentifier("chat.sessions")
+            .shadcnTooltip("Sessions")
+            Text(activeThreadLabel)
+                .font(theme.typography.sans(theme.typography.sm))
+                .foregroundStyle(palette.foreground)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .accessibilityIdentifier("chat.session.title")
+            Spacer(minLength: 0)
         }
-        .accessibilityLabel("Chat: \(activeThreadLabel)")
-        .accessibilityHint("Choose a chat or start a new one")
-        .shadcnTooltip(activeThreadLabel)
     }
 
     private func conversationMenuChrome<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
-            .padding(.horizontal, Space.x2)
-            .frame(height: chrome.density == .compact ? 24 : 28)
-            .frame(
-                minWidth: 72,
-                maxWidth: threadLabelMaxWidth,
-                alignment: .leading)
+            .frame(width: 28, height: 28)
             .background(
                 RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
                     .fill(palette.isDark ? palette.input.opacity(0.3) : palette.background)
@@ -690,7 +686,7 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
                 .foregroundStyle(palette.mutedForeground)
         }
         .padding(.horizontal, Space.x2)
-        .frame(height: chrome.density == .compact ? 24 : 28)
+        .frame(height: 32)
         .background(
             RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
                 .fill(palette.isDark ? palette.input.opacity(0.3) : palette.background)
@@ -1428,18 +1424,26 @@ public struct AIAssistantRosterRail: View {
     }
 
     public var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        GeometryReader { geometry in
+            ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Space.x2) {
-                Text("Agents")
-                    .font(theme.typography.sans(theme.typography.xs, weight: .medium))
-                    .foregroundStyle(palette.mutedForeground)
+                // No "Agents" caption: every seat is already an `@name` chip,
+                // which says what the row is more clearly than a label does,
+                // and the caption only ate width in a horizontally scrolling
+                // rail.
                 ForEach(Array(entries.enumerated()), id: \.element.id) { index, agent in
                     seat(agent, index: index)
                 }
             }
             .padding(.horizontal, density == .compact ? Space.x2 : Space.x3)
             .padding(.vertical, density == .compact ? Space.x1 : Space.x1_5)
+            // Leading, not trailing: the seats read left to right like the
+            // rest of the panel, and trailing alignment stranded them against
+            // the right edge with a band of empty rail beside them.
+            .frame(minWidth: geometry.size.width, alignment: .leading)
+            }
         }
+        .frame(height: density == .compact ? 32 : 36)
     }
 
     private func seat(_ agent: AIAssistantRosterEntry, index: Int) -> some View {

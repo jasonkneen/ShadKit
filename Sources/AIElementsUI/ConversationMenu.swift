@@ -77,9 +77,9 @@ struct AIConversationMenu: NSViewRepresentable {
         }
 
         func updateTitle(on button: AIConversationMenuButton) {
-            let title = activeTitle
-            if button.title != title { button.title = title }
-            button.setAccessibilityLabel("Chat: \(title)")
+            button.title = ""
+            button.setAccessibilityLabel("Sessions")
+            button.setAccessibilityValue(activeTitle)
             button.setAccessibilityHelp("Choose, search, archive, or fork a chat")
         }
 
@@ -376,14 +376,14 @@ final class AIConversationMenuButton: NSButton {
         super.init(frame: frameRect)
         isBordered = false
         bezelStyle = .inline
-        imagePosition = .imageTrailing
-        alignment = .left
+        imagePosition = .imageOnly
+        alignment = .center
         lineBreakMode = .byTruncatingTail
         image = NSImage(
             systemSymbolName: "clock.arrow.circlepath",
             accessibilityDescription: nil)
         symbolConfiguration = NSImage.SymbolConfiguration(
-            pointSize: 9, weight: .semibold)
+            pointSize: 14, weight: .regular)
         contentTintColor = .secondaryLabelColor
         setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -392,8 +392,7 @@ final class AIConversationMenuButton: NSButton {
     required init?(coder: NSCoder) { fatalError() }
 
     override var intrinsicContentSize: NSSize {
-        let size = super.intrinsicContentSize
-        return NSSize(width: max(size.width, 72), height: max(size.height, 22))
+        NSSize(width: 28, height: 28)
     }
 }
 #endif

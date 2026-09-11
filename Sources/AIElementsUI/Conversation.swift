@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Layout and pinning metrics for ``AIConversation``.
 ///
-/// The standard preset preserves AI Elements' existing transcript geometry.
+/// The standard preset keeps related turns visually connected.
 /// Use ``compact`` for denser sidebars without changing every message view.
 public struct AIConversationStyle: Equatable, Sendable {
     public var itemSpacing: CGFloat
@@ -12,7 +12,7 @@ public struct AIConversationStyle: Equatable, Sendable {
     public var bottomTolerance: CGFloat
 
     public init(
-        itemSpacing: CGFloat = 32,
+        itemSpacing: CGFloat = 16,
         horizontalPadding: CGFloat = 16,
         verticalPadding: CGFloat = 16,
         bottomTolerance: CGFloat = 8
@@ -25,7 +25,7 @@ public struct AIConversationStyle: Equatable, Sendable {
 
     public static let standard = AIConversationStyle()
 
-    public static let compact = AIConversationStyle(itemSpacing: 16)
+    public static let compact = AIConversationStyle(itemSpacing: 12)
 }
 
 /// What ``AIConversation`` watches to decide it should re-pin to the bottom.

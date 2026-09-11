@@ -1024,7 +1024,7 @@ public struct AIContext: View {
                     AIContextGauge(fraction: usage.usedFraction)
                     Text(usage.usedFraction.formatted(.percent.precision(.fractionLength(0))) + " context")
                         .font(theme.typography.sans(theme.typography.xs, weight: .medium))
-                        .foregroundStyle(palette.mutedForeground)
+                        .foregroundStyle(palette.foreground)
                 }
                 .contentShape(Rectangle())
             }
@@ -1084,23 +1084,25 @@ public struct AIContext: View {
 /// The little ring that fills as the context window is consumed.
 public struct AIContextGauge: View {
     let fraction: Double
+    let size: CGFloat
 
     @Environment(\.shadcnPalette) private var palette
 
-    public init(fraction: Double) {
-        self.fraction = fraction
+    public init(fraction: Double, size: CGFloat = 14) {
+        self.fraction = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+        self.size = size
     }
 
     public var body: some View {
         ZStack {
             Circle()
-                .stroke(palette.muted, lineWidth: 2)
+                .stroke(palette.mutedForeground.opacity(0.35), lineWidth: size >= 24 ? 3 : 2)
             Circle()
                 .trim(from: 0, to: fraction)
-                .stroke(palette.primary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .stroke(palette.primary, style: StrokeStyle(lineWidth: size >= 24 ? 3 : 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
-        .frame(width: 14, height: 14)
+        .frame(width: size, height: size)
     }
 }
 

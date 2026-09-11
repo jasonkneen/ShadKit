@@ -211,6 +211,7 @@ public struct ShadcnPopover<Trigger: View, Content: View>: View {
 /// One row in a dropdown: `rounded-sm px-2 py-1.5 text-sm`, highlighting to
 /// `bg-accent` on hover.
 public struct ShadcnMenuItem: View {
+    private let previewFont: Font?
     private let title: String
     private let systemImage: String?
     /// Brand logo (models.dev-style). Preferred over `systemImage` when set.
@@ -232,9 +233,11 @@ public struct ShadcnMenuItem: View {
         symbolVariableValue: Double? = nil,
         isSelected: Bool = false,
         isDestructive: Bool = false,
+        previewFont: Font? = nil,
         action: @escaping () -> Void
     ) {
         self.title = title
+        self.previewFont = previewFont
         self.systemImage = systemImage
         self.image = image
         self.symbolVariableValue = symbolVariableValue
@@ -253,6 +256,7 @@ public struct ShadcnMenuItem: View {
             HStack(spacing: Space.x2) {
                 leadingIcon
                 Text(title)
+                    .font(previewFont ?? theme.typography.sans(theme.typography.sm))
                     .lineLimit(1)
                 Spacer(minLength: Space.x4)
                 if isSelected {
@@ -294,6 +298,7 @@ public struct ShadcnMenuItem: View {
 /// models.dev-style brand SVGs and `systemImage` as a fallback glyph.
 /// Set `symbolVariableValue` (0…1) for multi-level symbols like `cellularbars`.
 public struct ShadcnSelectOption<Value: Hashable>: Identifiable {
+    public var previewFont: Font?
     public var id: Value { value }
     public var value: Value
     public var label: String
@@ -306,9 +311,11 @@ public struct ShadcnSelectOption<Value: Hashable>: Identifiable {
         label: String,
         systemImage: String? = nil,
         image: Image? = nil,
-        symbolVariableValue: Double? = nil
+        symbolVariableValue: Double? = nil,
+        previewFont: Font? = nil
     ) {
         self.value = value
+        self.previewFont = previewFont
         self.label = label
         self.systemImage = systemImage
         self.image = image
@@ -491,6 +498,8 @@ func shadcnSelectTriggerIconTint(
 /// Radix `Select` — a trigger showing the current value plus a dropdown of
 /// options. Trigger chrome matches `Input`.
 public struct ShadcnSelect<Value: Hashable>: View {
+    private let searchable: Bool
+    private let recentValues: [Value]
     private let placeholder: String
     @Binding private var selection: Value?
     private let options: [ShadcnSelectOption<Value>]
@@ -527,9 +536,13 @@ public struct ShadcnSelect<Value: Hashable>: View {
         edge: VerticalEdge = .bottom,
         maxVisibleRows: Int = 8,
         tintsTriggerWithPrimary: Bool = false,
+        searchable: Bool = false,
+        recentValues: [Value] = [],
         options: [ShadcnSelectOption<Value>]
     ) {
         self.placeholder = placeholder
+        self.searchable = searchable
+        self.recentValues = recentValues
         self._selection = selection
         self.options = options
         self.width = width
@@ -552,6 +565,8 @@ public struct ShadcnSelect<Value: Hashable>: View {
         edge: VerticalEdge = .bottom,
         maxVisibleRows: Int = 8,
         tintsTriggerWithPrimary: Bool = false,
+        searchable: Bool = false,
+        recentValues: [Value] = [],
         options: [(value: Value, label: String)]
     ) {
         self.init(
@@ -564,6 +579,8 @@ public struct ShadcnSelect<Value: Hashable>: View {
             edge: edge,
             maxVisibleRows: maxVisibleRows,
             tintsTriggerWithPrimary: tintsTriggerWithPrimary,
+            searchable: searchable,
+            recentValues: recentValues,
             options: options.map { ShadcnSelectOption(value: $0.value, label: $0.label) }
         )
     }
@@ -639,21 +656,9 @@ public struct ShadcnSelect<Value: Hashable>: View {
             .opacity(isEnabled ? 1 : 0.5)
             .help(currentLabel ?? placeholder)
         } content: {
-            // Cap tall lists: without this, upward placement offsets by the
-            // full content height and only the tail of the list sits near the
-            // trigger (looks like a broken, truncated popup).
-            if needsScroll {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        menuRows
-                    }
-                }
-                .frame(height: CGFloat(maxVisibleRows) * Self.rowHeight)
-            } else {
-                VStack(spacing: 0) {
-                    menuRows
-                }
-            }
+            ShadcnSelectMenuContent(selection: $selection, isOpen: $isOpen,
+                                    options: options, searchable: searchable,
+                                    recentValues: recentValues, maxVisibleRows: maxVisibleRows)
         }
     }
 
@@ -737,20 +742,92 @@ public struct ShadcnSelect<Value: Hashable>: View {
         }
     }
 
+}
+
+/// Search state belongs to the floating host so typing invalidates its rows,
+/// even though the presenting dropdown captures its content when opened.
+private struct ShadcnSelectMenuContent<Value: Hashable>: View {
+    @Binding var selection: Value?
+    @Binding var isOpen: Bool
+    let options: [ShadcnSelectOption<Value>]
+    let searchable: Bool
+    let recentValues: [Value]
+    let maxVisibleRows: Int
+    @State private var searchText = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if searchable {
+                ShadcnTextField("Search…", text: $searchText, onSubmit: {
+                    if let first = filteredOptions.first {
+                        selection = first.value
+                        isOpen = false
+                    }
+                }, autofocus: true)
+                .padding(Space.x1)
+            }
+            if options.count > maxVisibleRows || searchable {
+                ScrollView {
+                    LazyVStack(spacing: 0) { menuRows }
+                }
+                .frame(height: CGFloat(maxVisibleRows) * ShadcnSelect<Value>.rowHeight)
+            } else {
+                VStack(spacing: 0) { menuRows }
+            }
+        }
+    }
+
     @ViewBuilder
     private var menuRows: some View {
-        ForEach(options) { option in
+        if filteredOptions.isEmpty {
+            ShadcnMenuLabel("No matches")
+        }
+        ForEach(filteredOptions) { option in
+            if searchText.isEmpty && option.value == filteredOptions.first?.value && recentValues.contains(option.value) {
+                ShadcnMenuLabel("Recent")
+            }
+            if searchText.isEmpty && !recentValues.isEmpty && option.value == filteredOptions.first(where: { !recentValues.contains($0.value) })?.value {
+                ShadcnMenuLabel("All options")
+            }
             ShadcnMenuItem(
                 option.label,
                 systemImage: option.systemImage,
                 image: option.image,
                 symbolVariableValue: option.symbolVariableValue,
-                isSelected: option.value == selection
+                isSelected: option.value == selection,
+                previewFont: option.previewFont
             ) {
                 selection = option.value
                 isOpen = false
             }
         }
+    }
+
+    private var filteredOptions: [ShadcnSelectOption<Value>] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return options.enumerated().compactMap { index, option -> (Int, Int, ShadcnSelectOption<Value>)? in
+            guard let score = ShadcnSelectSearch.score(query: query, label: option.label) else { return nil }
+            let rank = query.isEmpty ? (recentValues.firstIndex(of: option.value) ?? recentValues.count) : score
+            return (rank, index, option)
+        }.sorted { $0.0 == $1.0 ? $0.1 < $1.1 : $0.0 < $1.0 }.map { $0.2 }
+    }
+}
+
+public enum ShadcnSelectSearch {
+    public static func score(query: String, label: String) -> Int? {
+        let query = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let label = label.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        if query.isEmpty || label == query { return 0 }
+        if label.hasPrefix(query) { return 1 }
+        if label.contains(query) { return 2 }
+        var remaining = label[...]
+        var gaps = 0
+        for character in query where !character.isWhitespace {
+            guard let index = remaining.firstIndex(of: character) else { return nil }
+            gaps += remaining.distance(from: remaining.startIndex, to: index)
+            remaining = remaining[remaining.index(after: index)...]
+        }
+        return 3 + gaps
     }
 }
 

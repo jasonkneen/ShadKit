@@ -27,6 +27,8 @@ public struct AIPromptInputStyle: Sendable {
     /// When set, replaces the default input/ring border. Used for composer
     /// modes that need a distinct shell (bash `!` is pink).
     public var borderColor: Color?
+    public var borderWidth: CGFloat?
+    public var placeholderColor: Color?
     /// When set, replaces the textarea foreground colour.
     public var textColor: Color?
     /// `true` renders the textarea at `text-base` rather than `text-sm`.
@@ -47,6 +49,8 @@ public struct AIPromptInputStyle: Sendable {
         textFieldHorizontalPadding: CGFloat = Space.x2,
         textFieldTrailingAccessoryWidth: CGFloat = 0,
         borderColor: Color? = nil,
+        borderWidth: CGFloat? = nil,
+        placeholderColor: Color? = nil,
         textColor: Color? = nil,
         usesLargeText: Bool = false,
         footerPadding: CGFloat = Space.x3,
@@ -59,6 +63,8 @@ public struct AIPromptInputStyle: Sendable {
         self.textFieldHorizontalPadding = textFieldHorizontalPadding
         self.textFieldTrailingAccessoryWidth = textFieldTrailingAccessoryWidth
         self.borderColor = borderColor
+        self.borderWidth = borderWidth
+        self.placeholderColor = placeholderColor
         self.textColor = textColor
         self.usesLargeText = usesLargeText
         self.footerPadding = footerPadding
@@ -380,6 +386,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
                     ? theme.typography.base.size
                     : theme.typography.sm.size,
                 textColor: style.textColor,
+                placeholderColor: style.placeholderColor,
                 focus: $isFocused,
                 // Enter submits; Shift+Enter inserts a newline (composer UX).
                 onSubmit: {
@@ -414,7 +421,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
         )
         .shadcnBorder(
             style.borderColor ?? (isFocused ? palette.ring : palette.input),
-            width: style.borderColor == nil ? 1 : 2,
+            width: style.borderWidth ?? (style.borderColor == nil ? 1 : 2),
             cornerRadius: cornerRadius
         )
         .applyIf(style.borderColor == nil) { view in
