@@ -6,6 +6,12 @@ import XCTest
 /// bottom-of-panel selects can open upward with a known height.
 final class OverlayPlacementTests: XCTestCase {
 
+    func testFloatingPanelsUseTheSharedFrostedAppearance() {
+        XCTAssertEqual(ShadcnOverlayAppearance.tintOpacity, 0.22, accuracy: 0.001)
+        XCTAssertEqual(ShadcnOverlayAppearance.borderOpacity, 0.9, accuracy: 0.001)
+        XCTAssertEqual(ShadcnOverlayAppearance.borderWidth, 0.75, accuracy: 0.001)
+    }
+
     func testOverlayHostReceivesTheResolvedDarkPaletteExplicitly() {
         let theme = ShadcnTheme.default
         let host = ShadcnOverlayHost(

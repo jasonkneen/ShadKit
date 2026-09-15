@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class ConversationMenuAppearanceTests: XCTestCase {
-    func testHistoryRemainsOpaqueWithoutGlassFromATransparentPane() throws {
+    func testHistoryUsesFrostedAppearanceWithoutLiquidGlass() throws {
         let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 500, height: 500),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -31,9 +31,9 @@ final class ConversationMenuAppearanceTests: XCTestCase {
         let pixel = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
         let expected = try XCTUnwrap(NSColor(coordinator.palette.popover).usingColorSpace(.sRGB))
         XCTAssertGreaterThan(pixel.alphaComponent, 0.95)
-        XCTAssertEqual(pixel.redComponent, expected.redComponent, accuracy: 0.05)
-        XCTAssertEqual(pixel.greenComponent, expected.greenComponent, accuracy: 0.05)
-        XCTAssertEqual(pixel.blueComponent, expected.blueComponent, accuracy: 0.05)
+        XCTAssertGreaterThan(abs(pixel.redComponent - expected.redComponent), 0.05)
+        XCTAssertGreaterThan(abs(pixel.greenComponent - expected.greenComponent), 0.05)
+        XCTAssertGreaterThan(abs(pixel.blueComponent - expected.blueComponent), 0.05)
     }
 }
 #endif

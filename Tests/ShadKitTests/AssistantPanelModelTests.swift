@@ -46,6 +46,23 @@ final class AssistantPanelModelTests: XCTestCase {
         XCTAssertEqual(message.text, "answer")
     }
 
+    func testRosterContextCarriesFullUsageForItsDetailPopover() {
+        let usage = AIContextUsage(
+            usedTokens: 188_290,
+            maxTokens: 258_400,
+            inputTokens: 188_290,
+            outputTokens: 109,
+            reasoningTokens: 7,
+            cachedTokens: 186_112)
+        let entry = AIAssistantRosterEntry(
+            id: "auto", name: "Auto",
+            detail: "Model: gpt-5.4 · Effort: High",
+            contextUsage: usage)
+
+        XCTAssertEqual(entry.contextUsage, usage)
+        XCTAssertEqual(entry.contextFraction, usage.usedFraction)
+    }
+
     func testRosterToggleAndSettingsOwnedFontSizeAreInteractiveState() {
         let model = AIAssistantPanelModel()
         var toggled: [String] = []

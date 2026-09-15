@@ -91,6 +91,10 @@ public struct AIAssistantRosterEntry: Identifiable, Equatable, Sendable {
     /// telemetry for it yet (e.g. it hasn't taken a turn this session) — the
     /// roster menu omits the meter rather than showing a false 0%.
     public let contextFraction: Double?
+    /// Full token accounting for this seat. Hosts that only know a fraction
+    /// can leave this nil; context popovers then retain their existing
+    /// aggregate fallback.
+    public let contextUsage: AIContextUsage?
     /// True while this agent is actively running a turn — draws the roster
     /// row's pulse indicator.
     public let isWorking: Bool
@@ -102,6 +106,7 @@ public struct AIAssistantRosterEntry: Identifiable, Equatable, Sendable {
     public init(
         id: String, name: String, detail: String, isEnabled: Bool = true,
         contextFraction: Double? = nil,
+        contextUsage: AIContextUsage? = nil,
         isWorking: Bool = false,
         hasMissingKey: Bool = false
     ) {
@@ -109,7 +114,8 @@ public struct AIAssistantRosterEntry: Identifiable, Equatable, Sendable {
         self.name = name
         self.detail = detail
         self.isEnabled = isEnabled
-        self.contextFraction = contextFraction
+        self.contextFraction = contextFraction ?? contextUsage?.usedFraction
+        self.contextUsage = contextUsage
         self.isWorking = isWorking
         self.hasMissingKey = hasMissingKey
     }
@@ -680,8 +686,9 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
     private func contextControl(_ aggregate: Double) -> some View {
         HStack(spacing: Space.x1) {
             AIContextGauge(fraction: aggregate)
-            Text(aggregate.formatted(.percent.precision(.fractionLength(0)))
-                 + (chrome.density == .compact ? "" : " context"))
+            // No " context" suffix in any density — the accessibility label
+            // below still names what the number is.
+            Text(aggregate.formatted(.percent.precision(.fractionLength(0))))
                 .font(theme.typography.sans(theme.typography.xs))
                 .foregroundStyle(palette.mutedForeground)
         }

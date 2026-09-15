@@ -223,9 +223,7 @@ public struct ShadcnCommand: View {
                     .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
                 }
             }
-            .background(
-                ShadcnTranslucentFill(color: palette.popover, cornerRadius: theme.radius.xl)
-            )
+            .shadcnOverlayAppearance(cornerRadius: theme.radius.xl)
             .onAppear { syncHighlight() }
             .onChange(of: query) { _, _ in syncHighlight() }
             .onChange(of: highlighted) { _, id in

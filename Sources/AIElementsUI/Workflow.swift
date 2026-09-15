@@ -548,33 +548,42 @@ public struct AICheckpoint: View {
 /// ``AIQueue`` card.
 public struct AIQueueStrip: View {
     private let items: [AIQueueItem]
+    private let externallyExpanded: Binding<Bool>?
     private let onEdit: (AIQueueItem.ID) -> Void
     private let onSendNow: (AIQueueItem.ID) -> Void
     private let onCancel: (AIQueueItem.ID) -> Void
     private let onMove: (AIQueueItem.ID, Int) -> Void
     private let onHandoff: ((AIQueueItem.ID) -> Void)?
     private let onAddToPlan: ((AIQueueItem.ID) -> Void)?
+    private let onOpenPanel: (() -> Void)?
+    private let backgroundColor: Color?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
-    @State private var isExpanded = false
+    @State private var locallyExpanded = false
 
     public init(
         items: [AIQueueItem],
+        isExpanded: Binding<Bool>? = nil,
         onEdit: @escaping (AIQueueItem.ID) -> Void = { _ in },
         onSendNow: @escaping (AIQueueItem.ID) -> Void = { _ in },
         onCancel: @escaping (AIQueueItem.ID) -> Void = { _ in },
         onMove: @escaping (AIQueueItem.ID, Int) -> Void = { _, _ in },
         onHandoff: ((AIQueueItem.ID) -> Void)? = nil,
-        onAddToPlan: ((AIQueueItem.ID) -> Void)? = nil
+        onAddToPlan: ((AIQueueItem.ID) -> Void)? = nil,
+        onOpenPanel: (() -> Void)? = nil,
+        backgroundColor: Color? = nil
     ) {
         self.items = items
+        self.externallyExpanded = isExpanded
         self.onEdit = onEdit
         self.onSendNow = onSendNow
         self.onCancel = onCancel
         self.onMove = onMove
         self.onHandoff = onHandoff
         self.onAddToPlan = onAddToPlan
+        self.onOpenPanel = onOpenPanel
+        self.backgroundColor = backgroundColor
     }
 
     /// Items grouped by `agentLabel`, in first-seen order; items with no
@@ -593,6 +602,10 @@ public struct AIQueueStrip: View {
 
     private var isGrouped: Bool {
         items.contains { $0.agentLabel != nil }
+    }
+
+    private var isExpanded: Bool {
+        externallyExpanded?.wrappedValue ?? locallyExpanded
     }
 
     /// Items still waiting to run — neither completed nor already sent.
@@ -622,10 +635,20 @@ public struct AIQueueStrip: View {
                 }
             }
         }
-        .background(
-            ShadcnTranslucentFill(color: palette.background, cornerRadius: theme.radius.lg)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(queueBackground)
         .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
+    }
+
+    @ViewBuilder
+    private var queueBackground: some View {
+        if let backgroundColor {
+            RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
+                .fill(backgroundColor)
+        } else {
+            ShadcnTranslucentFill(
+                color: palette.background, cornerRadius: theme.radius.lg)
+        }
     }
 
     @ViewBuilder
@@ -646,22 +669,44 @@ public struct AIQueueStrip: View {
     }
 
     private var header: some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
-        } label: {
-            HStack(spacing: Space.x2) {
-                ShadcnIconView(ShadcnIcon.listTodo, size: 14)
-                Text("\(Self.pendingCount(items)) queued")
-                    .font(theme.typography.sans(theme.typography.sm, weight: .medium))
-                Spacer(minLength: 0)
-                ShadcnDisclosureChevron(isOpen: isExpanded, size: 14)
+        HStack(spacing: Space.x1) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    if let externallyExpanded {
+                        externallyExpanded.wrappedValue.toggle()
+                    } else {
+                        locallyExpanded.toggle()
+                    }
+                }
+            } label: {
+                HStack(spacing: Space.x2) {
+                    ShadcnIconView(ShadcnIcon.listTodo, size: 14)
+                    Text("\(Self.pendingCount(items)) queued")
+                        .font(theme.typography.sans(theme.typography.sm, weight: .medium))
+                    Spacer(minLength: 0)
+                    ShadcnDisclosureChevron(isOpen: isExpanded, size: 14)
+                }
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(palette.mutedForeground)
-            .padding(.horizontal, Space.x3)
-            .padding(.vertical, Space.x2)
-            .contentShape(Rectangle())
+            .buttonStyle(.shadcnBare)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel(isExpanded ? "Collapse queue" : "Expand queue")
+
+            if let onOpenPanel {
+                Button(action: onOpenPanel) {
+                    ShadcnIconView(ShadcnIcon.sidebarRight, size: 13)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.shadcnBare)
+                .accessibilityLabel("Move queue and plan to side panel")
+                .help("Move queue and plan to side panel")
+                .padding(.trailing, Space.x1)
+            }
         }
-        .buttonStyle(.shadcnBare)
+        .foregroundStyle(palette.mutedForeground)
+        .padding(.leading, Space.x3)
+        .padding(.vertical, Space.x2)
     }
 }
 
@@ -969,7 +1014,7 @@ struct AIQueueRow: View {
 // MARK: - Context
 
 /// Token accounting behind `AIContext`.
-public struct AIContextUsage: Sendable {
+public struct AIContextUsage: Equatable, Sendable {
     public var usedTokens: Int
     public var maxTokens: Int
     public var inputTokens: Int?
@@ -1006,13 +1051,21 @@ public struct AIContextUsage: Sendable {
 /// cost breakdown.
 public struct AIContext: View {
     private let usage: AIContextUsage
+    private let scopeLabel: String?
+    private let detail: String?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
     @State private var isOpen = false
 
-    public init(usage: AIContextUsage) {
+    public init(
+        usage: AIContextUsage,
+        scopeLabel: String? = nil,
+        detail: String? = nil
+    ) {
         self.usage = usage
+        self.scopeLabel = scopeLabel
+        self.detail = detail
     }
 
     public var body: some View {
@@ -1022,11 +1075,14 @@ public struct AIContext: View {
             } label: {
                 HStack(spacing: Space.x1_5) {
                     AIContextGauge(fraction: usage.usedFraction)
-                    Text(usage.usedFraction.formatted(.percent.precision(.fractionLength(0))) + " context")
+                    // Ring + percentage only — the ring already says
+                    // "context", so the word was pure width.
+                    Text(usage.usedFraction.formatted(.percent.precision(.fractionLength(0))))
                         .font(theme.typography.sans(theme.typography.xs, weight: .medium))
                         .foregroundStyle(palette.foreground)
                 }
                 .contentShape(Rectangle())
+                .accessibilityLabel("Context usage")
             }
             .buttonStyle(.shadcnBare)
         } content: {
@@ -1036,6 +1092,27 @@ public struct AIContext: View {
 
     private var breakdown: some View {
         VStack(alignment: .leading, spacing: Space.x2) {
+            if scopeLabel != nil || detail != nil {
+                VStack(alignment: .leading, spacing: Space.x1) {
+                    if let scopeLabel {
+                        Text(scopeLabel)
+                            .font(theme.typography.sans(
+                                theme.typography.sm, weight: .semibold))
+                            .foregroundStyle(palette.popoverForeground)
+                            .lineLimit(1)
+                    }
+                    if let detail {
+                        Text(detail)
+                            .font(theme.typography.sans(theme.typography.xs))
+                            .foregroundStyle(palette.mutedForeground)
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                ShadcnSeparator()
+            }
+
             HStack {
                 Text(usage.usedFraction.formatted(.percent.precision(.fractionLength(1))))
                     .font(theme.typography.sans(theme.typography.xs, weight: .medium))

@@ -67,6 +67,22 @@ public struct ShadcnSwitch: View {
                 guard isEnabled else { return }
                 withAnimation(.easeOut(duration: 0.18)) { isOn.toggle() }
             }
+            // A switch is a control, not a drawing: expose it as one and give
+            // it the keyboard path a bare `.onTapGesture` leaves out. The
+            // caller supplies the label via `.accessibilityLabel`.
+            .accessibilityElement()
+            .accessibilityAddTraits(isOn ? [.isSelected] : [])
+            .accessibilityValue(isOn ? "On" : "Off")
+            .accessibilityAction {
+                guard isEnabled else { return }
+                withAnimation(.easeOut(duration: 0.18)) { isOn.toggle() }
+            }
+            .focusable()
+            .onKeyPress(.space) {
+                guard isEnabled else { return .ignored }
+                withAnimation(.easeOut(duration: 0.18)) { isOn.toggle() }
+                return .handled
+            }
     }
 }
 

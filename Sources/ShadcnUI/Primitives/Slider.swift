@@ -66,6 +66,40 @@ public struct ShadcnSlider: View {
         }
         .frame(height: 20)
         .opacity(isEnabled ? 1 : 0.5)
+        // A slider must be adjustable without a pointer: expose the value and
+        // an adjustable action, plus arrow-key support when focused. The
+        // caller supplies the label via `.accessibilityLabel`.
+        .accessibilityElement()
+        .accessibilityValue(Text(String(format: "%.2f", value)))
+        .accessibilityAdjustableAction { direction in
+            guard isEnabled else { return }
+            let delta = step ?? (range.upperBound - range.lowerBound) / 20
+            switch direction {
+            case .increment: adjust(by: delta)
+            case .decrement: adjust(by: -delta)
+            @unknown default: break
+            }
+        }
+        .focusable()
+        .onKeyPress(.leftArrow) {
+            guard isEnabled else { return .ignored }
+            adjust(by: -(step ?? (range.upperBound - range.lowerBound) / 20))
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            guard isEnabled else { return .ignored }
+            adjust(by: step ?? (range.upperBound - range.lowerBound) / 20)
+            return .handled
+        }
+    }
+
+    /// Move by `delta`, snapping to the step and clamping to the range.
+    private func adjust(by delta: Double) {
+        var next = value + delta
+        if let step, step > 0 {
+            next = (next / step).rounded() * step
+        }
+        value = min(max(next, range.lowerBound), range.upperBound)
     }
 
     private func update(to newFraction: Double) {
@@ -112,6 +146,7 @@ public struct ShadcnSliderRow: View {
                 .frame(width: 110, alignment: .leading)
 
             ShadcnSlider(value: $value, in: range, step: step)
+                .accessibilityLabel(title)
 
             Text(format(value))
                 .font(theme.typography.mono(theme.typography.xs))

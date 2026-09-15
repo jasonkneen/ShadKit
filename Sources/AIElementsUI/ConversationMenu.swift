@@ -200,10 +200,7 @@ public struct AIConversationPickerView: View {
         }
         .padding(Space.x3)
         .frame(width: 360, height: 440, alignment: .top)
-        .background(
-            ShadcnTranslucentFill(color: palette.popover, cornerRadius: theme.radius.lg)
-        )
-        .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
+        .shadcnOverlayAppearance(cornerRadius: theme.radius.lg)
     }
 
     private var searchField: some View {

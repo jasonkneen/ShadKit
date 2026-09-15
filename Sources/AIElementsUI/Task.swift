@@ -368,11 +368,11 @@ public struct AISources: View {
         ShadcnDisclosure(defaultOpen: defaultOpen, spacing: Space.x3) { isOpen in
             HStack(spacing: Space.x2) {
                 Text("Used \(sources.count) \(sources.count == 1 ? "source" : "sources")")
-                    .font(theme.typography.sans(theme.typography.xs, weight: .medium))
-                ShadcnDisclosureChevron(isOpen: isOpen)
+                    .font(theme.typography.sans(theme.typography.xs))
+                ShadcnDisclosureChevron(isOpen: isOpen, size: 11)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(palette.primary)
+            .foregroundStyle(palette.mutedForeground)
             .contentShape(Rectangle())
         } content: {
             VStack(alignment: .leading, spacing: Space.x2) {
@@ -416,10 +416,10 @@ public struct AISourceRow: View {
             HStack(spacing: Space.x2) {
                 ShadcnIconView(ShadcnIcon.book, size: 16)
                 Text(source.title)
-                    .font(theme.typography.sans(theme.typography.xs, weight: .medium))
+                    .font(theme.typography.sans(theme.typography.xs))
                     .lineLimit(1)
             }
-            .foregroundStyle(palette.primary)
+            .foregroundStyle(palette.mutedForeground)
             .contentShape(Rectangle())
         }
         .buttonStyle(.shadcnBare)

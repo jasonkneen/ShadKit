@@ -2,13 +2,63 @@ import SwiftUI
 
 // MARK: - Panel chrome
 
+/// Visual contract shared by floating menus, popovers, and selects.
+public enum ShadcnOverlayAppearance {
+    public static let tintOpacity: CGFloat = 0.22
+    public static let borderOpacity: CGFloat = 0.9
+    public static let borderWidth: CGFloat = 0.75
+}
+
+private struct ShadcnOverlayAppearanceModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.shadcnPalette) private var palette
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                let shape = RoundedRectangle(
+                    cornerRadius: cornerRadius, style: .continuous)
+                if reduceTransparency {
+                    shape.fill(palette.popover)
+                } else {
+                    ZStack {
+                        shape.fill(.regularMaterial)
+                        shape.fill(
+                            palette.popover.opacity(
+                                ShadcnOverlayAppearance.tintOpacity))
+                    }
+                }
+            }
+            .shadcnBorder(
+                palette.border.opacity(ShadcnOverlayAppearance.borderOpacity),
+                width: ShadcnOverlayAppearance.borderWidth,
+                cornerRadius: cornerRadius)
+            .foregroundStyle(palette.popoverForeground)
+            .shadow(
+                color: .black.opacity(palette.isDark ? 0.36 : 0.18),
+                radius: 20, x: 0, y: 10)
+            .shadow(
+                color: .black.opacity(palette.isDark ? 0.22 : 0.10),
+                radius: 3, x: 0, y: 2)
+    }
+}
+
+public extension View {
+    /// Applies the standard frosted floating-panel treatment independently of
+    /// the app's optional Liquid Glass preference.
+    func shadcnOverlayAppearance(cornerRadius: CGFloat) -> some View {
+        modifier(ShadcnOverlayAppearanceModifier(cornerRadius: cornerRadius))
+    }
+}
+
 /// The shared surface behind popovers, dropdowns, selects and hover cards:
 /// `rounded-md border bg-popover text-popover-foreground shadow-md`.
 public struct ShadcnPanel<Content: View>: View {
     private let padding: CGFloat
     private let content: Content
 
-    @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
 
     public init(padding: CGFloat = Space.x1, @ViewBuilder content: () -> Content) {
@@ -21,16 +71,7 @@ public struct ShadcnPanel<Content: View>: View {
             content
         }
         .padding(padding)
-        .background(
-            // Thick, so bright content behind a floating panel (a white
-            // bubble) does not smear through it as a grey block.
-            ShadcnTranslucentFill(
-                color: palette.popover, cornerRadius: theme.radius.md,
-                material: .thickMaterial)
-        )
-        .shadcnBorder(palette.border, cornerRadius: theme.radius.md)
-        .foregroundStyle(palette.popoverForeground)
-        .shadcnShadow(.md)
+        .shadcnOverlayAppearance(cornerRadius: theme.radius.md)
     }
 }
 

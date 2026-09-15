@@ -59,6 +59,7 @@ public enum ShadcnIcon {
     public static let audioWaveform = "waveform"
     public static let settings2 = "slider.horizontal.3"
     public static let screenShare = "rectangle.on.rectangle"
+    public static let sidebarRight = "sidebar.right"
     public static let camera = "camera"
     public static let bookmark = "bookmark"
     public static let eye = "eye"
