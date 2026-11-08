@@ -19,6 +19,8 @@ import SwiftUI
 struct AIConversationMenu: NSViewRepresentable {
     var threads: [AIConversationEntry]
     var activeId: String?
+    var scopes: [AIConversationScope] = []
+    var preferredScopeID: String? = nil
     var compact: Bool
     var onSelect: (String) -> Void
     var onNew: () -> Void
@@ -29,6 +31,7 @@ struct AIConversationMenu: NSViewRepresentable {
     @Environment(\.shadcnTheme) private var theme
     @Environment(\.shadcnSurfaceOpacity) private var surfaceOpacity
     @Environment(\.shadcnGlassEnabled) private var glassEnabled
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -42,7 +45,7 @@ struct AIConversationMenu: NSViewRepresentable {
         context.coordinator.palette = palette
         context.coordinator.theme = theme
         context.coordinator.surfaceOpacity = surfaceOpacity
-        context.coordinator.glassEnabled = glassEnabled
+        context.coordinator.glassEnabled = glassEnabled && !reduceTransparency
         context.coordinator.updateTitle(on: button)
         return button
     }
@@ -52,7 +55,7 @@ struct AIConversationMenu: NSViewRepresentable {
         context.coordinator.palette = palette
         context.coordinator.theme = theme
         context.coordinator.surfaceOpacity = surfaceOpacity
-        context.coordinator.glassEnabled = glassEnabled
+        context.coordinator.glassEnabled = glassEnabled && !reduceTransparency
         button.font = .systemFont(
             ofSize: compact ? 11 : 13, weight: .medium)
         context.coordinator.updateTitle(on: button)
@@ -100,8 +103,9 @@ struct AIConversationMenu: NSViewRepresentable {
             panelController.anchorView = sender
             panelController.show(
                 edge: .bottom, alignment: .leading,
-                contentWidth: 360, contentHeight: 440,
+                contentWidth: 380, contentHeight: 440,
                 makesKey: true,
+                glass: glassEnabled,
                 onDismiss: {},
                 content: pickerContent)
         }
@@ -112,6 +116,8 @@ struct AIConversationMenu: NSViewRepresentable {
             AIConversationPickerView(
                 threads: parent?.threads ?? [],
                 activeId: parent?.activeId,
+                scopes: parent?.scopes ?? [],
+                preferredScopeID: parent?.preferredScopeID,
                 onSelect: { [weak self] id in
                     self?.parent?.onSelect(id)
                     self?.panelController.close()
@@ -129,7 +135,7 @@ struct AIConversationMenu: NSViewRepresentable {
             .environment(\.shadcnTheme, theme)
             .environment(\.shadcnPalette, palette)
             .environment(\.shadcnSurfaceOpacity, glassEnabled ? surfaceOpacity : 1)
-            .environment(\.shadcnHostProvidesGlass, false)
+            .environment(\.shadcnHostProvidesGlass, glassEnabled)
             .environment(\.shadcnGlassEnabled, glassEnabled)
             .environment(\.colorScheme, palette.isDark ? .dark : .light)
         }
@@ -139,6 +145,8 @@ struct AIConversationMenu: NSViewRepresentable {
 public struct AIConversationPickerView: View {
     var threads: [AIConversationEntry]
     var activeId: String?
+    var scopes: [AIConversationScope]
+    var preferredScopeID: String?
     var onSelect: (String) -> Void
     var onNew: () -> Void
     var onArchive: ((String) -> Void)?
@@ -147,6 +155,8 @@ public struct AIConversationPickerView: View {
     public init(
         threads: [AIConversationEntry],
         activeId: String?,
+        scopes: [AIConversationScope] = [],
+        preferredScopeID: String? = nil,
         onSelect: @escaping (String) -> Void,
         onNew: @escaping () -> Void,
         onArchive: ((String) -> Void)? = nil,
@@ -154,7 +164,10 @@ public struct AIConversationPickerView: View {
     ) {
         self.threads = threads
         self.activeId = activeId
+        self.scopes = scopes
+        self.preferredScopeID = preferredScopeID
         self.onSelect = onSelect
+        _scope = State(initialValue: preferredScopeID)
         self.onNew = onNew
         self.onArchive = onArchive
         self.onFork = onFork
@@ -164,79 +177,54 @@ public struct AIConversationPickerView: View {
     @Environment(\.shadcnTheme) private var theme
     @State private var tab: AIConversationTab = .recents
     @State private var range: AIConversationRange = .any
+    @State private var scope: String?
     @State private var search = ""
+    @State private var hoveredID: String?
     @State private var limit = AIConversationQuery.pageSize
 
     private var rows: [AIConversationEntry] {
         AIConversationQuery.filtered(
-            threads, tab: tab, range: range, search: search, limit: limit)
+            threads, tab: tab, range: range, search: search,
+            scopeID: scope, limit: limit)
     }
 
     private var canLoadMore: Bool {
         let full = AIConversationQuery.filtered(
-            threads, tab: tab, range: range, search: search, limit: .max)
+            threads, tab: tab, range: range, search: search,
+            scopeID: scope, limit: .max)
         return full.count > rows.count
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: Space.x2) {
-            searchField
-            HStack(spacing: Space.x2) {
-                ShadcnTabs(
-                    selection: $tab,
-                    variant: .solid,
-                    items: [
-                        (.recents, "Recents"),
-                        (.archived, "Archived"),
-                    ])
+        VStack(alignment: .leading, spacing: ShadcnPopoverStyle.sectionSpacing) {
+            ShadcnPopoverSearchField("Search conversations", text: $search)
+                .onChange(of: search) { _, _ in limit = AIConversationQuery.pageSize }
+            HStack(spacing: Space.x1) {
+                ShadcnPopoverTab("Recents", isOn: tab == .recents) { tab = .recents }
+                ShadcnPopoverTab("Archived", isOn: tab == .archived) { tab = .archived }
                 Spacer(minLength: 0)
+                if scopes.count > 1 { scopeMenu }
                 rangeMenu
             }
             list
-            ShadcnButton("New chat", systemImage: ShadcnIcon.plus, size: .small) {
-                onNew()
+            ShadcnPopoverFooter {
+                Spacer(minLength: 0)
+                ShadcnPopoverPrimaryButton("New chat", systemImage: ShadcnIcon.plus) {
+                    onNew()
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(Space.x3)
-        .frame(width: 360, height: 440, alignment: .top)
-        .shadcnOverlayAppearance(cornerRadius: theme.radius.lg)
-    }
-
-    private var searchField: some View {
-        HStack(spacing: Space.x2) {
-            ShadcnIconView(ShadcnIcon.search, size: 12)
-                .foregroundStyle(palette.mutedForeground)
-            TextField("Search conversations", text: $search)
-                .textFieldStyle(.plain)
-                .font(theme.typography.sans(theme.typography.sm))
-                .onChange(of: search) { _, _ in limit = AIConversationQuery.pageSize }
-        }
-        .padding(.horizontal, Space.x2)
-        .frame(height: 28)
-        .background(
-            RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                .fill(palette.muted.opacity(0.55))
-        )
-        .accessibilityLabel("Search conversations")
+        .padding(ShadcnPopoverStyle.panelPadding)
+        .frame(width: 380, height: 440, alignment: .top)
+        .shadcnPopoverSurface()
     }
 
     private var rangeMenu: some View {
-        Menu {
+        ShadcnPopoverMenu(rangeLabel) {
             Button("Any time") { range = .any }
             Button("Today") { range = .today }
             Button("This week") { range = .week }
-        } label: {
-            HStack(spacing: 4) {
-                Text(rangeLabel)
-                Image(systemName: ShadcnIcon.chevronDown)
-                    .font(.system(size: 8, weight: .semibold))
-            }
-            .font(theme.typography.sans(theme.typography.xs, weight: .medium))
-            .foregroundStyle(palette.mutedForeground)
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
         .accessibilityLabel("Filter by time")
     }
 
@@ -248,13 +236,47 @@ public struct AIConversationPickerView: View {
         }
     }
 
+    /// Scope titles can repeat (several "Agent" spaces); number the repeats so
+    /// the menu entries are tellable apart.
+    private var scopeItems: [(id: String, title: String)] {
+        let totals = Dictionary(scopes.map { ($0.title, 1) }, uniquingKeysWith: +)
+        var seen: [String: Int] = [:]
+        return scopes.map { item in
+            guard totals[item.title, default: 1] > 1 else { return (item.id, item.title) }
+            seen[item.title, default: 0] += 1
+            return (item.id, "\(item.title) \(seen[item.title] ?? 1)")
+        }
+    }
+
+    private var scopeLabel: String {
+        guard let scope else { return "All agents" }
+        return scopeItems.first { $0.id == scope }?.title ?? "All agents"
+    }
+
+    private var scopeMenu: some View {
+        ShadcnPopoverMenu(scopeLabel) {
+            Button("All agents") {
+                scope = nil
+                limit = AIConversationQuery.pageSize
+            }
+            Divider()
+            ForEach(scopeItems, id: \.id) { item in
+                Button(item.title) {
+                    scope = item.id
+                    limit = AIConversationQuery.pageSize
+                }
+            }
+        }
+        .accessibilityLabel("Filter by agent")
+    }
+
     private var list: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: ShadcnPopoverStyle.rowGap) {
                 if rows.isEmpty {
                     Text(emptyCopy)
                         .font(theme.typography.sans(theme.typography.sm))
-                        .foregroundStyle(palette.mutedForeground)
+                        .foregroundStyle(palette.popoverTertiary)
                         .padding(.vertical, Space.x4)
                         .frame(maxWidth: .infinity)
                 }
@@ -267,7 +289,7 @@ public struct AIConversationPickerView: View {
                     }
                     .buttonStyle(.plain)
                     .font(theme.typography.sans(theme.typography.xs, weight: .medium))
-                    .foregroundStyle(palette.mutedForeground)
+                    .foregroundStyle(palette.popoverSecondary)
                     .padding(.vertical, Space.x2)
                     .frame(maxWidth: .infinity)
                     .accessibilityLabel("Load more conversations")
@@ -297,31 +319,49 @@ public struct AIConversationPickerView: View {
                             .foregroundStyle(palette.foreground)
                             .lineLimit(1)
                         Spacer(minLength: Space.x2)
-                        Text(AIConversationQuery.relativeTime(from: item.updatedAt))
-                            .font(theme.typography.sans(theme.typography.xs))
-                            .foregroundStyle(palette.mutedForeground)
-                            .fixedSize()
+                        // Time and actions share one trailing slot: the time
+                        // stays flush right and swaps for the actions on
+                        // hover/selection, so nothing shifts or sits inset.
+                        let showActions = (onArchive != nil || onFork != nil)
+                            && (active || hoveredID == item.id)
+                        ZStack(alignment: .trailing) {
+                            Text(AIConversationQuery.relativeTime(from: item.updatedAt))
+                                .font(theme.typography.sans(theme.typography.xs))
+                                .foregroundStyle(palette.popoverTertiary)
+                                .fixedSize()
+                                .opacity(showActions ? 0 : 1)
+                            rowActions(item)
+                                .opacity(showActions ? 1 : 0)
+                                .allowsHitTesting(showActions)
+                        }
                     }
                     if !item.snippet.isEmpty {
                         Text(item.snippet)
                             .font(theme.typography.sans(theme.typography.xs))
-                            .foregroundStyle(palette.mutedForeground)
+                            .foregroundStyle(palette.popoverSecondary)
                             .lineLimit(1)
                     }
                 }
-                if onArchive != nil || onFork != nil {
-                    rowActions(item)
-                }
             }
-            .padding(.horizontal, Space.x2)
-            .padding(.vertical, Space.x2)
-            .background(
-                RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                    .fill(active ? palette.accent.opacity(0.18) : .clear)
-            )
+            .padding(.horizontal, ShadcnPopoverStyle.rowHorizontalPadding)
+            .padding(.vertical, ShadcnPopoverStyle.rowVerticalPadding)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: item.snippet.isEmpty
+                    ? ShadcnPopoverStyle.rowMinHeight
+                    : ShadcnPopoverStyle.twoLineRowMinHeight,
+                alignment: .leading)
+            .shadcnPopoverRowBackground(selected: active, hovered: hoveredID == item.id)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering {
+                hoveredID = item.id
+            } else if hoveredID == item.id {
+                hoveredID = nil
+            }
+        }
         .contextMenu {
             if let onFork {
                 Button("Fork conversation") { onFork(item.id) }
@@ -360,8 +400,8 @@ public struct AIConversationPickerView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(palette.mutedForeground)
-                .frame(width: 20, height: 20)
+                .foregroundStyle(palette.popoverSecondary)
+                .frame(width: 20, height: 16)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

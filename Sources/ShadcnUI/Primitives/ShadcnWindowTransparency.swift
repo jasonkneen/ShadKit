@@ -74,6 +74,9 @@ public enum ShadcnWindowTransparency {
                 frame: frame, material: .hudWindow, cornerRadius: cornerRadius)
             content.frame = blur.bounds
             blur.addSubview(content)
+            blur.layer?.cornerCurve = .continuous
+            blur.layer?.borderWidth = 0.5
+            blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
             return blur
         }
         content.frame = frame

@@ -10,6 +10,7 @@ public struct ShadcnSlider: View {
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.isEnabled) private var isEnabled
     @State private var isDragging = false
+    @FocusState private var isFocused: Bool
 
     public init(
         value: Binding<Double>,
@@ -45,6 +46,7 @@ public struct ShadcnSlider: View {
                     .fill(palette.background)
                     .frame(width: thumb, height: thumb)
                     .overlay(Circle().strokeBorder(palette.primary, lineWidth: 1))
+                    .overlay(Circle().stroke(palette.ring.opacity(isFocused ? 0.8 : 0), lineWidth: 2).padding(-2))
                     .shadcnShadow(.xs)
                     .offset(x: travel * fraction)
             }
@@ -81,6 +83,8 @@ public struct ShadcnSlider: View {
             }
         }
         .focusable()
+        .focused($isFocused)
+        .focusEffectDisabled()
         .onKeyPress(.leftArrow) {
             guard isEnabled else { return .ignored }
             adjust(by: -(step ?? (range.upperBound - range.lowerBound) / 20))

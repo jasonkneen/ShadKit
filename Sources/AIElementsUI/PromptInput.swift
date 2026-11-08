@@ -37,6 +37,9 @@ public struct AIPromptInputStyle: Sendable {
     public var footerPadding: CGFloat
     /// Submit button shape.
     public var submitIsCircular: Bool
+    /// Visual scale of the submit/stop button. Layout still reserves the stock
+    /// 32pt slot, so the footer does not move; only the drawn control shrinks.
+    public var submitScale: CGFloat = 1
     /// Resting height of the textarea. `min-h-16` (64) is right for a
     /// full-width page composer but far too tall in a sidebar, where it reads
     /// as a big empty box that then shrinks once content arrives.
@@ -305,6 +308,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
     private let placeholder: String
     private let status: AIPromptStatus
     private let style: AIPromptInputStyle
+    private let allowsEmptyTextSubmission: Bool
     private let onSubmit: () -> Void
     private let onStop: (() -> Void)?
     private let header: Header
@@ -318,6 +322,8 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @Environment(\.shadcnGlassEnabled) private var glassEnabled
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @FocusState private var isFocused: Bool
     @State private var activePalette: AIPromptPalette?
     /// Character offset of the trigger that opened `activePalette`, tracked
@@ -332,6 +338,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
         style: AIPromptInputStyle = .default,
         palettes: [AIPromptPalette] = [],
         palettePresentation: AIPromptPalettePresentation = .dialog,
+        allowsEmptyTextSubmission: Bool = false,
         onSubmit: @escaping () -> Void,
         onStop: (() -> Void)? = nil,
         onPaletteSelect: ((Character, ShadcnCommandItem) -> Void)? = nil,
@@ -343,6 +350,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
         self.placeholder = placeholder
         self.status = status
         self.style = style
+        self.allowsEmptyTextSubmission = allowsEmptyTextSubmission
         self.palettes = palettes
         self.palettePresentation = palettePresentation
         self.onSubmit = onSubmit
@@ -354,7 +362,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
     }
 
     private var canSubmit: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        allowsEmptyTextSubmission || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var cornerRadius: CGFloat { style.cornerRadius ?? theme.radius.md }
@@ -390,8 +398,7 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
                 focus: $isFocused,
                 // Enter submits; Shift+Enter inserts a newline (composer UX).
                 onSubmit: {
-                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    else { return }
+                    guard canSubmit else { return }
                     onSubmit()
                 }
             )
@@ -541,8 +548,26 @@ public struct AIPromptInput<Header: View, Tools: View, Trailing: View>: View {
 
     @ViewBuilder
     private var submitButton: some View {
+        let shapedAtFullSize = { (view: AnyView) -> AnyView in
+            guard style.submitIsCircular else { return view }
+            guard glassEnabled && !reduceTransparency else { return AnyView(view.clipShape(Circle())) }
+            var colors = palette
+            colors.primary = .clear
+            colors.primaryForeground = palette.foreground
+            colors.destructive = .clear
+            colors.destructiveForeground = palette.destructive
+            let control = view.environment(\.shadcnPalette, colors).clipShape(Circle())
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, iOS 26.0, *) {
+                return AnyView(control.glassEffect(.regular.interactive(), in: Circle()))
+            }
+            #endif
+            return AnyView(control.background(.ultraThinMaterial, in: Circle()))
+        }
         let shaped = { (view: AnyView) -> AnyView in
-            style.submitIsCircular ? AnyView(view.clipShape(Circle())) : view
+            let full = shapedAtFullSize(view)
+            return style.submitScale == 1
+                ? full : AnyView(full.scaleEffect(style.submitScale))
         }
 
         switch status {

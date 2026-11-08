@@ -108,6 +108,7 @@ public struct ShadcnCheckbox: View {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .strokeBorder(isChecked ? palette.primary : palette.input, lineWidth: 1)
             )
+            .shadcnDarkOutline(RoundedRectangle(cornerRadius: 4, style: .continuous))
             .overlay {
                 if isChecked {
                     Image(systemName: ShadcnIcon.check)

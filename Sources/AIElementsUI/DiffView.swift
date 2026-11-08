@@ -244,12 +244,13 @@ public struct AIDiffView: View {
 
     @ViewBuilder
     private var rowViews: some View {
+        let counterparts = Self.counterparts(for: lines)
         ForEach(rows) { row in
             switch row {
             case let .line(line):
                 AIDiffLineRow(
                     line: line,
-                    counterpart: counterpart(for: line),
+                    counterpart: counterparts[line.id],
                     showsBothNumbers: mode == .split,
                     language: language,
                     fontSize: fontSize)
@@ -381,27 +382,27 @@ public struct AIDiffView: View {
         return result
     }
 
-    /// The removed line a given added line replaced, for word-level highlights.
-    private func counterpart(for line: AIDiffLine) -> String? {
-        guard line.kind == .added,
-              let index = lines.firstIndex(where: { $0.id == line.id })
-        else { return nil }
-
-        // Walk back over the added block to the removals that preceded it and
-        // pair them off in order.
-        var addedBefore = 0
-        var cursor = index - 1
-        while cursor >= 0, lines[cursor].kind == .added {
-            addedBefore += 1
-            cursor -= 1
+    /// Pair each replacement block once. Scanning back and rebuilding the
+    /// removal array for every added row made a block cost O(N³).
+    static func counterparts(for lines: [AIDiffLine]) -> [Int: String] {
+        var result: [Int: String] = [:]
+        var index = 0
+        while index < lines.count {
+            guard lines[index].kind == .removed else {
+                index += 1
+                continue
+            }
+            let start = index
+            while index < lines.count, lines[index].kind == .removed { index += 1 }
+            let count = index - start
+            var offset = 0
+            while index < lines.count, lines[index].kind == .added {
+                if offset < count { result[lines[index].id] = lines[start + offset].text }
+                offset += 1
+                index += 1
+            }
         }
-        var removals: [String] = []
-        while cursor >= 0, lines[cursor].kind == .removed {
-            removals.insert(lines[cursor].text, at: 0)
-            cursor -= 1
-        }
-        guard addedBefore < removals.count else { return nil }
-        return removals[addedBefore]
+        return result
     }
 
     private func collapsedRow(id: Int, count: Int) -> some View {

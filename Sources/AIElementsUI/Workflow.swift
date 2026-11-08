@@ -557,9 +557,12 @@ public struct AIQueueStrip: View {
     private let onAddToPlan: ((AIQueueItem.ID) -> Void)?
     private let onOpenPanel: (() -> Void)?
     private let backgroundColor: Color?
+    private let showsFrame: Bool
+    private let maximumListHeight: CGFloat?
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var locallyExpanded = false
 
     public init(
@@ -572,7 +575,9 @@ public struct AIQueueStrip: View {
         onHandoff: ((AIQueueItem.ID) -> Void)? = nil,
         onAddToPlan: ((AIQueueItem.ID) -> Void)? = nil,
         onOpenPanel: (() -> Void)? = nil,
-        backgroundColor: Color? = nil
+        backgroundColor: Color? = nil,
+        showsFrame: Bool = true,
+        maximumListHeight: CGFloat? = nil
     ) {
         self.items = items
         self.externallyExpanded = isExpanded
@@ -584,6 +589,8 @@ public struct AIQueueStrip: View {
         self.onAddToPlan = onAddToPlan
         self.onOpenPanel = onOpenPanel
         self.backgroundColor = backgroundColor
+        self.showsFrame = showsFrame
+        self.maximumListHeight = maximumListHeight
     }
 
     /// Items grouped by `agentLabel`, in first-seen order; items with no
@@ -617,7 +624,34 @@ public struct AIQueueStrip: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if isExpanded {
-                VStack(alignment: .leading, spacing: 0) {
+                expandedContent
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(queueBackground)
+        .overlay {
+            if showsFrame {
+                RoundedRectangle(cornerRadius: theme.radius.lg)
+                    .strokeBorder(palette.border, lineWidth: 1)
+                    .shadcnDarkOutline(RoundedRectangle(cornerRadius: theme.radius.lg))
+            }
+        }
+    }
+
+    @ViewBuilder private var expandedContent: some View {
+        if let maximumListHeight {
+            ScrollView {
+                expandedRows
+            }
+            .frame(height: min(maximumListHeight, CGFloat(items.count) * 36 + CGFloat(isGrouped ? groups.count : 0) * 26))
+        } else {
+            expandedRows
+        }
+    }
+
+    private var expandedRows: some View {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if isGrouped {
                         ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
                             if let label = group.label {
@@ -632,12 +666,7 @@ public struct AIQueueStrip: View {
                     } else {
                         rows(for: items)
                     }
-                }
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(queueBackground)
-        .shadcnBorder(palette.border, cornerRadius: theme.radius.lg)
     }
 
     @ViewBuilder
@@ -671,7 +700,7 @@ public struct AIQueueStrip: View {
     private var header: some View {
         HStack(spacing: Space.x1) {
             Button {
-                withAnimation(.easeOut(duration: 0.15)) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                     if let externallyExpanded {
                         externallyExpanded.wrappedValue.toggle()
                     } else {
@@ -682,7 +711,7 @@ public struct AIQueueStrip: View {
                 HStack(spacing: Space.x2) {
                     ShadcnIconView(ShadcnIcon.listTodo, size: 14)
                     Text("\(Self.pendingCount(items)) queued")
-                        .font(theme.typography.sans(theme.typography.sm, weight: .medium))
+                        .font(theme.typography.sans(theme.typography.xs, weight: .semibold))
                     Spacer(minLength: 0)
                     ShadcnDisclosureChevron(isOpen: isExpanded, size: 14)
                 }
@@ -956,6 +985,7 @@ struct AIQueueRow: View {
                         )
                     )
                     .frame(width: 10, height: 10)
+                    .shadcnDarkOutline(Circle())
                     .padding(.top, 2)
 
                 Text(item.title)

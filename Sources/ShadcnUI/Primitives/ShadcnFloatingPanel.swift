@@ -5,17 +5,42 @@ import SwiftUI
 /// Invisible marker view that gives `ShadcnFloatingPanelController` a live
 /// `NSView` — and therefore its `window`/screen frame — without changing
 /// anything SwiftUI renders. Attach via `.background`.
-struct ShadcnFloatingAnchor: NSViewRepresentable {
+public struct ShadcnFloatingAnchor: NSViewRepresentable {
     let controller: ShadcnFloatingPanelController
 
-    func makeNSView(context: Context) -> NSView {
+    public init(controller: ShadcnFloatingPanelController) {
+        self.controller = controller
+    }
+
+    public final class Coordinator {
+        let controller: ShadcnFloatingPanelController
+        init(controller: ShadcnFloatingPanelController) { self.controller = controller }
+    }
+
+    public func makeCoordinator() -> Coordinator { Coordinator(controller: controller) }
+
+    public func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
         controller.anchorView = view
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        controller.anchorView = nsView
+    /// SwiftUI can rebuild this representable on a plain re-render of the
+    /// trigger (observed on every `isPresented` toggle): it makes the new
+    /// view, then *updates* the outgoing one, then dismantles it. Taking the
+    /// slot unconditionally here let the outgoing instance win that race, so
+    /// the controller was left holding a view about to be deallocated and the
+    /// next `show()` bailed with no anchor — a lit button and no panel. Only
+    /// take the slot when the current holder is gone or detached.
+    public func updateNSView(_ nsView: NSView, context: Context) {
+        guard let current = controller.anchorView, current !== nsView else { return }
+        if current.window == nil { controller.anchorView = nsView }
+    }
+
+    public static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        if coordinator.controller.anchorView === nsView {
+            coordinator.controller.anchorView = nil
+        }
     }
 }
 
@@ -45,6 +70,8 @@ public final class ShadcnFloatingPanelController: NSObject {
     /// `NSViewRepresentable`'s own trigger, e.g. `AIConversationMenu`) can
     /// set this directly, instead of going through `ShadcnFloatingAnchor`.
     public weak var anchorView: NSView?
+
+    public override init() { super.init() }
 
     private var panel: NSPanel?
     private var hostingView: NSHostingView<AnyView>?
@@ -83,16 +110,34 @@ public final class ShadcnFloatingPanelController: NSObject {
         contentWidth: CGFloat? = nil,
         contentHeight: CGFloat? = nil,
         makesKey: Bool = false,
+        cornerRadius: CGFloat = 14,
+        glass: Bool = true,
+        retryIfDetached: Bool = true,
         onDismiss: @escaping () -> Void,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) {
         close()
         guard
             let anchorRect = anchorScreenRect,
             let screen = anchorView?.window?.screen ?? NSScreen.main
-        else { return }
+        else {
+            // A freshly rebuilt anchor joins its window a turn after
+            // `makeNSView`; `onChange` can run in between. Retry once.
+            guard retryIfDetached else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.show(
+                    edge: edge, alignment: alignment, gap: gap,
+                    contentWidth: contentWidth, contentHeight: contentHeight,
+                    makesKey: makesKey, cornerRadius: cornerRadius, glass: glass,
+                    retryIfDetached: false, onDismiss: onDismiss, content: content)
+            }
+            return
+        }
 
-        let hosting = NSHostingView(rootView: AnyView(content()))
+        let hosting = NSHostingView(rootView: AnyView(
+            content()
+                .environment(\.shadcnOnNativeChrome, glass)
+                .environment(\.shadcnHostProvidesGlass, glass)))
         // Unlike `ShadcnHostingView` (which sets `sizingOptions = []` to
         // defer to the caller's Auto Layout constraints), this hosting view
         // has no constraints at all — it's positioned by explicit `setFrame`
@@ -138,7 +183,14 @@ public final class ShadcnFloatingPanelController: NSObject {
         let fitting = hosting.fittingSize
         let width = max(contentWidth ?? fitting.width, 1)
         let height = max(contentHeight ?? fitting.height, 1)
-        hosting.frame = NSRect(origin: .zero, size: CGSize(width: width, height: height))
+        let finalFrame = NSRect(origin: .zero, size: CGSize(width: width, height: height))
+        hosting.frame = finalFrame
+        // Only now, with the real measured size in hand, wrap the content in
+        // true compositing chrome (`NSGlassEffectView`/behind-window
+        // `NSVisualEffectView`) — matching Rex's menu panel exactly — instead
+        // of handing the SwiftUI content straight to the panel.
+        panel.contentView = ShadcnWindowTransparency.wrap(
+            hosting, frame: finalFrame, cornerRadius: cornerRadius, glass: glass)
 
         let origin = Self.screenOrigin(
             anchor: anchorRect, edge: edge, alignment: alignment, gap: gap,
@@ -192,16 +244,19 @@ public final class ShadcnFloatingPanelController: NSObject {
     /// shortcut need real keyboard focus, unlike a menu/select/hover card.
     public func showCentered<Content: View>(
         makesKey: Bool = true,
+        cornerRadius: CGFloat = 14,
+        glass: Bool = true,
         onDismiss: @escaping () -> Void,
         @ViewBuilder content: () -> Content
     ) {
         close()
         guard let anchorWindow = anchorView?.window else { return }
 
-        let hosting = NSHostingView(rootView: AnyView(content()))
+        let hosting = NSHostingView(rootView: AnyView(content().environment(\.shadcnOnNativeChrome, glass)))
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
-        hosting.frame = NSRect(origin: .zero, size: anchorWindow.frame.size)
+        let finalFrame = NSRect(origin: .zero, size: anchorWindow.frame.size)
+        hosting.frame = finalFrame
 
         let panel = ShadcnKeyablePanel(
             contentRect: anchorWindow.frame,
@@ -214,6 +269,12 @@ public final class ShadcnFloatingPanelController: NSObject {
         panel.level = .popUpMenu
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        // `showCentered` covers the whole anchor window with its own scrim +
+        // centered panel (`ShadcnDialogPanel` draws its own chrome via
+        // `shadcnOverlayAppearance`), so the full-window content view itself
+        // is never glass-wrapped — `cornerRadius`/`glass` are accepted for
+        // API symmetry with `show` but intentionally unused here.
+        _ = (cornerRadius, glass)
         panel.contentView = hosting
 
         anchorWindow.addChildWindow(panel, ordered: .above)

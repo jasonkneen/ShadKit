@@ -1,5 +1,17 @@
 import Foundation
 
+/// A filter chip in the conversation picker — one agent's space, a league,
+/// or the workspace's own chats.
+public struct AIConversationScope: Identifiable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+
+    public init(id: String, title: String) {
+        self.id = id
+        self.title = title
+    }
+}
+
 /// One row in the Chat conversation picker.
 public struct AIConversationEntry: Identifiable, Equatable, Sendable {
     public var id: String
@@ -8,6 +20,8 @@ public struct AIConversationEntry: Identifiable, Equatable, Sendable {
     public var snippet: String
     public var searchText: String
     public var isArchived: Bool
+    /// Which scope this conversation belongs to; nil means "all".
+    public var scopeID: String?
 
     public init(
         id: String,
@@ -15,7 +29,8 @@ public struct AIConversationEntry: Identifiable, Equatable, Sendable {
         updatedAt: Date,
         snippet: String = "",
         searchText: String = "",
-        isArchived: Bool = false
+        isArchived: Bool = false,
+        scopeID: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -23,6 +38,7 @@ public struct AIConversationEntry: Identifiable, Equatable, Sendable {
         self.snippet = snippet
         self.searchText = searchText
         self.isArchived = isArchived
+        self.scopeID = scopeID
     }
 }
 
@@ -45,6 +61,7 @@ public enum AIConversationQuery {
         tab: AIConversationTab,
         range: AIConversationRange,
         search: String,
+        scopeID: String? = nil,
         now: Date = Date(),
         limit: Int = pageSize
     ) -> [AIConversationEntry] {
@@ -58,6 +75,10 @@ public enum AIConversationQuery {
                 case .recents: !item.isArchived
                 case .archived: item.isArchived
                 }
+            }
+            .filter { item in
+                guard let scopeID else { return true }
+                return item.scopeID == scopeID
             }
             .filter { item in
                 switch range {

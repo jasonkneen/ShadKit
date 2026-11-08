@@ -27,6 +27,22 @@ private struct AIMessageStyleKey: EnvironmentKey {
     static let defaultValue = AIMessageStyle.standard
 }
 
+/// How ``AIMessageContent`` paints a user bubble.
+public enum AIUserBubbleStyle: Equatable, Sendable {
+    /// AI Elements' `bg-secondary` pill with `secondaryForeground` text.
+    case secondary
+    /// Follows the surface: Liquid Glass when `shadcnGlassEnabled` is on
+    /// (material fallback before macOS 26), otherwise a quiet tint of the
+    /// foreground. Text keeps the panel's own foreground either way, so the
+    /// bubble never reads as a bright slab on a dark transcript. Reduce
+    /// Transparency gets the tinted fill.
+    case adaptive
+}
+
+private struct AIUserBubbleStyleKey: EnvironmentKey {
+    static let defaultValue = AIUserBubbleStyle.secondary
+}
+
 private struct AIMessageTextSizeKey: EnvironmentKey {
     static let defaultValue: CGFloat = 15
 }
@@ -51,6 +67,12 @@ extension EnvironmentValues {
         set { self[AIMessageTextSizeKey.self] = newValue }
     }
 
+    /// How user bubbles are painted. Defaults to ``AIUserBubbleStyle/secondary``.
+    public var aiUserBubbleStyle: AIUserBubbleStyle {
+        get { self[AIUserBubbleStyleKey.self] }
+        set { self[AIUserBubbleStyleKey.self] = newValue }
+    }
+
     var aiAssistantBubbleTint: Color? {
         get { self[AIAssistantBubbleTintKey.self] }
         set { self[AIAssistantBubbleTintKey.self] = newValue }
@@ -61,6 +83,11 @@ extension View {
     /// Applies message bubble metrics to this view hierarchy.
     public func aiMessageStyle(_ style: AIMessageStyle) -> some View {
         environment(\.aiMessageStyle, style)
+    }
+
+    /// Chooses how user bubbles below this view are painted.
+    public func aiUserBubbleStyle(_ style: AIUserBubbleStyle) -> some View {
+        environment(\.aiUserBubbleStyle, style)
     }
 }
 
@@ -188,12 +215,21 @@ public struct AIMessageContent<Content: View>: View {
     @Environment(\.aiMessageStyle) private var messageStyle
     @Environment(\.aiMessageTextSize) private var messageTextSize
     @Environment(\.aiAssistantBubbleTint) private var assistantBubbleTint
+    @Environment(\.aiUserBubbleStyle) private var userBubbleStyle
 
     public init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
     private var isUser: Bool { role == .user }
+    /// An adaptive user bubble sits on the panel's own colours rather than on
+    /// a `secondary` fill, so it keeps the panel's foreground.
+    private var usesSecondaryUserBubble: Bool {
+        isUser && userBubbleStyle == .secondary
+    }
+    private var bubbleForeground: Color {
+        usesSecondaryUserBubble ? palette.secondaryForeground : palette.foreground
+    }
     /// The palette inside a user bubble: the bubble is `secondary`, so text
     /// and muted text come from `secondaryForeground`.
     private var userBubblePalette: ShadcnPalette {
@@ -213,9 +249,10 @@ public struct AIMessageContent<Content: View>: View {
             VStack(alignment: .leading, spacing: Space.x2) {
                 content
             }
-            .font(.system(size: messageTextSize))
+            .font(theme.typography.sans(.init(
+                size: messageTextSize, lineHeight: messageTextSize * 1.45)))
             // A user bubble is a `secondary` surface: its text is that fill's foreground.
-            .foregroundStyle(isUser ? palette.secondaryForeground : palette.foreground)
+            .foregroundStyle(bubbleForeground)
             .applyIf(isUser || assistantBubbleTint != nil) { view in
                 view
                     .padding(.horizontal, messageStyle.bubbleHorizontalPadding)
@@ -224,14 +261,22 @@ public struct AIMessageContent<Content: View>: View {
                     // inside it — markdown included, which paints its own
                     // colours from the palette — sees a palette whose
                     // foreground is `secondaryForeground`.
-                    .environment(\.shadcnPalette, isUser ? userBubblePalette : palette)
+                    .environment(
+                        \.shadcnPalette,
+                        usesSecondaryUserBubble ? userBubblePalette : palette)
                     // Explicit as well: text with no colour of its own inherits
                     // the row's foreground from outside the bubble otherwise.
-                    .foregroundStyle(isUser ? palette.secondaryForeground : palette.foreground)
-                    .background(
-                        RoundedRectangle(cornerRadius: theme.radius.lg, style: .continuous)
-                            .fill(isUser ? palette.secondary : (assistantBubbleTint ?? .clear))
-                    )
+                    .foregroundStyle(bubbleForeground)
+                    .background {
+                        let shape = RoundedRectangle(
+                            cornerRadius: theme.radius.lg, style: .continuous)
+                        if isUser && userBubbleStyle == .adaptive {
+                            AIAdaptiveUserBubble(shape: shape)
+                        } else {
+                            shape.fill(
+                                isUser ? palette.secondary : (assistantBubbleTint ?? .clear))
+                        }
+                    }
             }
             .fixedSize(horizontal: false, vertical: true)
             // A coloured assistant reply hugs a readable column; un-attributed
@@ -241,6 +286,52 @@ public struct AIMessageContent<Content: View>: View {
             }
 
             if !isUser { Spacer(minLength: 0) }
+        }
+    }
+}
+
+/// The ``AIUserBubbleStyle/adaptive`` user bubble: glass on a glass surface,
+/// a quiet foreground tint otherwise, with a hairline edge in both cases.
+struct AIAdaptiveUserBubble: View {
+    let shape: RoundedRectangle
+
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnGlassEnabled) private var glassEnabled
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    /// Fill opacity of the foreground tint used when glass is off. Dark themes
+    /// need a little more: a light tint over a dark surface reads weaker.
+    static func tintOpacity(isDark: Bool) -> Double { isDark ? 0.10 : 0.06 }
+
+    var body: some View {
+        if glassEnabled && !reduceTransparency {
+            glass
+                .overlay(shape.strokeBorder(palette.foreground.opacity(0.16), lineWidth: 0.5))
+        } else {
+            shape
+                .fill(palette.foreground.opacity(Self.tintOpacity(isDark: palette.isDark)))
+                .overlay(shape.strokeBorder(palette.foreground.opacity(0.08), lineWidth: 0.5))
+        }
+    }
+
+    @ViewBuilder
+    private var glass: some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *) {
+            // Not `.interactive()`: the bubble is content, not a control.
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            materialFallback
+        }
+        #else
+        materialFallback
+        #endif
+    }
+
+    private var materialFallback: some View {
+        ZStack {
+            shape.fill(.ultraThinMaterial)
+            shape.fill(palette.foreground.opacity(0.06))
         }
     }
 }

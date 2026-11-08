@@ -208,6 +208,32 @@ extension View {
 
 // MARK: - Shared view helpers
 
+/// The darker line set just outside a light border on dark palettes.
+public enum ShadcnDarkEdge {
+    public static let color = Color.black.opacity(0.6)
+    /// The line runs flush from the element's edge to this far outside it.
+    public static let width: CGFloat = 1
+}
+
+private struct ShadcnDarkOutline<S: InsettableShape>: ViewModifier {
+    let shape: S
+    @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content.background {
+            if palette.isDark && theme.darkOutlineIntensity > 0 {
+                // `inset(by: -w/2)` centres a `w`-wide stroke `w/2` outside
+                // the edge, so it covers exactly 0…w beyond the bounds.
+                shape
+                    .inset(by: -ShadcnDarkEdge.width / 2)
+                    .stroke(Color.black.opacity(theme.darkOutlineIntensity), lineWidth: ShadcnDarkEdge.width)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
 extension View {
     /// Applies a `ShadcnShadow`.
     public func shadcnShadow(_ shadow: ShadcnShadow) -> some View {
@@ -218,6 +244,9 @@ extension View {
     ///
     /// SwiftUI strokes centred on the path, so the shape is inset by half the
     /// line width to keep the outer edge where CSS would put it.
+    ///
+    /// On dark palettes the border also gets `shadcnDarkOutline`, a darker
+    /// line just outside it, so a light edge reads as framed.
     public func shadcnBorder(
         _ color: Color,
         width: CGFloat = 1,
@@ -228,6 +257,15 @@ extension View {
                 .inset(by: width / 2)
                 .stroke(color, lineWidth: width)
         )
+        .shadcnDarkOutline(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
+    /// Dark palettes only: a darker line hugging the outside of `shape`, which
+    /// must trace the element's light border. Attach it after any clip on the
+    /// element, since it draws outside the element's bounds.
+    public func shadcnDarkOutline<S: InsettableShape>(_ shape: S) -> some View {
+        modifier(ShadcnDarkOutline(shape: shape))
     }
 
     /// shadcn's focus treatment: a 1pt ring in `ring`, plus a 3pt halo at 50%.

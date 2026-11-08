@@ -300,6 +300,7 @@ public struct AIGrokComposer: View {
         .foregroundStyle(palette.foreground)
         .clipShape(Capsule(style: .continuous))
         .overlay(Capsule(style: .continuous).strokeBorder(palette.border, lineWidth: 1))
+        .shadcnDarkOutline(Capsule(style: .continuous))
         .fixedSize()
     }
 }

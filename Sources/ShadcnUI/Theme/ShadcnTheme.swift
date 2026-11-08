@@ -54,6 +54,10 @@ public struct ShadcnTypography: Sendable {
     /// Base weight for the sans-serif font. Defaults to `.regular`.
     /// Used by `sans(_:weight:)` to resolve the final weight.
     public var sansWeight: Font.Weight = .regular
+    /// Optional host-provided font resolver for families whose variation axes
+    /// need to be set explicitly. Receives the requested size and the weight
+    /// after applying the component's relative emphasis.
+    public var sansFontProvider: (@Sendable (CGFloat, Font.Weight) -> Font)?
     /// Family used for code. `nil` means the platform monospace font.
     public var monoFamily: String?
 
@@ -130,6 +134,9 @@ public struct ShadcnTypography: Sendable {
 
     public func sans(_ step: Step, weight: Font.Weight? = nil) -> Font {
         let resolvedWeight = Self.resolve(weight, base: sansWeight)
+        if let sansFontProvider {
+            return sansFontProvider(step.size, resolvedWeight)
+        }
         if let sansFamily {
             return .custom(sansFamily, size: step.size).weight(resolvedWeight)
         }
@@ -180,6 +187,8 @@ public struct ShadcnTheme: Sendable {
     public var dark: ShadcnPaletteSpec
     public var radius: ShadcnRadius
     public var typography: ShadcnTypography
+    /// Strength of the outer dark line around light borders. Zero disables it.
+    public var darkOutlineIntensity: Double = 0.6
 
     public init(
         light: ShadcnPaletteSpec = .neutralLight,

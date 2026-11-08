@@ -247,6 +247,11 @@ public final class AIAssistantPanelModel: ObservableObject {
     public var onForkThread: ((String) -> Void)?
     /// Rich conversation-switcher rows. When empty, `threads` is the fallback.
     @Published public var conversations: [AIConversationEntry] = []
+    /// Scope chips shown in the conversation picker ("Coder", "Studio",
+    /// "Chats"…). Empty keeps the stock two-tab picker.
+    @Published public var conversationScopes: [AIConversationScope] = []
+    /// Scope the picker opens on (the current agent's space, when any).
+    @Published public var conversationPreferredScopeID: String?
 
     public init() {}
 
@@ -620,6 +625,8 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
                     }
                     : model.conversations,
                 activeId: model.activeThreadId,
+                scopes: model.conversationScopes,
+                preferredScopeID: model.conversationPreferredScopeID,
                 compact: chrome.density == .compact,
                 onSelect: { model.selectThread($0) },
                 onNew: { model.startNewChat() },
@@ -692,19 +699,41 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
                 .font(theme.typography.sans(theme.typography.xs))
                 .foregroundStyle(palette.mutedForeground)
         }
+        // Ring and percentage sit bare: no chip fill and no border, so the
+        // readout doesn't box itself off from the rest of the top bar.
         .padding(.horizontal, Space.x2)
         .frame(height: 32)
-        .background(
-            RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                .fill(palette.isDark ? palette.input.opacity(0.3) : palette.background)
-        )
-        .shadcnBorder(palette.input, cornerRadius: theme.radius.md)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Context usage across agents")
         .accessibilityValue(contextAccessibilityValue)
-        .shadcnHoverOverlay(width: 288, alignment: .trailing) {
+        .shadcnHoverOverlay(width: 300, alignment: .trailing) {
             contextPopoutContent
+        }
+    }
+
+    /// Fraction at which a context meter switches from the accent colour to
+    /// the destructive one: past this the next turn is at real risk of being
+    /// truncated, so the colour is a warning, not decoration.
+    private var contextCriticalFraction: Double { 0.85 }
+
+    private func contextMeterColor(_ fraction: Double) -> Color {
+        fraction >= contextCriticalFraction ? palette.destructive : palette.primary
+    }
+
+    /// `18.2K`, `200K`, `1.1M` — the popup has room for the shape of the
+    /// number, not six digits per agent.
+    private static func compactTokens(_ value: Int) -> String {
+        let v = Double(value)
+        switch v {
+        case 1_000_000...:
+            return (v / 1_000_000).formatted(.number.precision(.fractionLength(1))) + "M"
+        case 10_000...:
+            return (v / 1_000).formatted(.number.precision(.fractionLength(0))) + "K"
+        case 1_000...:
+            return (v / 1_000).formatted(.number.precision(.fractionLength(1))) + "K"
+        default:
+            return value.formatted()
         }
     }
 
@@ -719,14 +748,28 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
             + "\(model.roster.count) agents reporting"
     }
 
+    /// The "compress" glyph for Compact actions. The old refresh arrow read
+    /// as "reload" — and next to a ring gauge, as a spinner.
+    private var compactIcon: String { "arrow.down.right.and.arrow.up.left" }
+
     private var contextPopoutContent: some View {
-        VStack(alignment: .leading, spacing: Space.x1) {
-            HStack(spacing: Space.x2) {
-                ShadcnMenuLabel("Context by agent")
+        let reporting = model.roster.filter { $0.contextFraction != nil }
+        return VStack(alignment: .leading, spacing: 0) {
+            // Header: what the top-bar number means, plus the bulk action.
+            HStack(alignment: .firstTextBaseline, spacing: Space.x2) {
+                VStack(alignment: .leading, spacing: Space.x0_5) {
+                    Text("Context")
+                        .font(theme.typography.sans(theme.typography.sm, weight: .semibold))
+                        .foregroundStyle(palette.popoverForeground)
+                    Text(contextPopoutSubtitle(reporting: reporting.count))
+                        .font(theme.typography.sans(theme.typography.xs))
+                        .foregroundStyle(palette.mutedForeground)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: Space.x2)
-                if model.onCompactAllContext != nil {
+                if model.onCompactAllContext != nil, reporting.count > 1 {
                     ShadcnButton(
-                        "Compact all", systemImage: ShadcnIcon.refresh,
+                        "Compact all", systemImage: compactIcon,
                         variant: .ghost, size: .xs
                     ) {
                         model.onCompactAllContext?()
@@ -736,44 +779,127 @@ public struct AIAssistantPanelTopBar<Accessory: View>: View {
                     )
                 }
             }
-            .padding(.horizontal, Space.x2)
-            ForEach(model.roster) { agent in
+            .padding(.bottom, Space.x3)
+
+            ForEach(Array(model.roster.enumerated()), id: \.element.id) { index, agent in
+                if index > 0 {
+                    ShadcnSeparator()
+                        .padding(.vertical, Space.x2)
+                }
                 contextPopoutRow(agent)
             }
         }
     }
 
+    private func contextPopoutSubtitle(reporting: Int) -> String {
+        let total = model.roster.count
+        guard reporting > 0 else {
+            return total == 1 ? "No usage yet this session" : "No agent has taken a turn yet"
+        }
+        if total == 1 { return "Live context window for this agent" }
+        return "Highest of \(reporting) of \(total) agents reporting"
+    }
+
     private func contextPopoutRow(_ agent: AIAssistantRosterEntry) -> some View {
-        HStack(spacing: Space.x2) {
-            Text("@\(agent.name)")
-                .font(theme.typography.sans(theme.typography.sm))
-                .lineLimit(1)
-            Spacer(minLength: Space.x2)
-            if let fraction = agent.contextFraction {
-                AIContextGauge(fraction: fraction)
-                Text(fraction.formatted(.percent.precision(.fractionLength(0))))
-                    .font(theme.typography.sans(theme.typography.xs))
-                    .foregroundStyle(palette.mutedForeground)
-                    .frame(minWidth: 34, alignment: .trailing)
-                if model.onCompactContext != nil {
-                    ShadcnButton(
-                        "Compact", systemImage: ShadcnIcon.refresh,
-                        variant: .ghost, size: .xs
-                    ) {
-                        model.onCompactContext?(agent.id)
+        VStack(alignment: .leading, spacing: Space.x1_5) {
+            // Name · model, with the headline number on the right.
+            HStack(alignment: .firstTextBaseline, spacing: Space.x2) {
+                VStack(alignment: .leading, spacing: Space.x0_5) {
+                    HStack(spacing: Space.x1_5) {
+                        Text("@\(agent.name)")
+                            .font(theme.typography.sans(theme.typography.sm, weight: .medium))
+                            .foregroundStyle(
+                                agent.isEnabled ? palette.popoverForeground : palette.mutedForeground)
+                            .lineLimit(1)
+                        if agent.isWorking {
+                            AILoader(size: 8)
+                                .foregroundStyle(palette.primary)
+                                .accessibilityLabel("Working")
+                        } else if agent.hasMissingKey {
+                            ShadcnIconView(ShadcnIcon.alertTriangle, size: 10)
+                                .foregroundStyle(palette.destructive)
+                                .accessibilityLabel("Missing API key")
+                        }
                     }
-                    .accessibilityHint(
-                        "Frees this agent's live context; the transcript stays"
-                    )
+                    Text(agent.detail)
+                        .font(theme.typography.sans(theme.typography.xs))
+                        .foregroundStyle(palette.mutedForeground)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-            } else {
-                Text("No data yet")
-                    .font(theme.typography.sans(theme.typography.xs))
-                    .foregroundStyle(palette.mutedForeground)
+                Spacer(minLength: Space.x2)
+                if let fraction = agent.contextFraction {
+                    Text(fraction.formatted(.percent.precision(.fractionLength(0))))
+                        .font(theme.typography.mono(theme.typography.sm, weight: .medium))
+                        .foregroundStyle(contextMeterColor(fraction))
+                        .monospacedDigit()
+                } else {
+                    Text("No data yet")
+                        .font(theme.typography.sans(theme.typography.xs))
+                        .foregroundStyle(palette.mutedForeground)
+                }
+            }
+
+            if let fraction = agent.contextFraction {
+                contextMeter(fraction)
+
+                HStack(alignment: .center, spacing: Space.x2) {
+                    if let usage = agent.contextUsage, usage.maxTokens > 0 {
+                        Text("\(Self.compactTokens(usage.usedTokens)) / \(Self.compactTokens(usage.maxTokens)) tokens")
+                            .font(theme.typography.mono(theme.typography.xs))
+                            .foregroundStyle(palette.mutedForeground)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                        if let cached = usage.cachedTokens, cached > 0 {
+                            Text("· \(Self.compactTokens(cached)) cached")
+                                .font(theme.typography.mono(theme.typography.xs))
+                                .foregroundStyle(palette.mutedForeground.opacity(0.7))
+                                .lineLimit(1)
+                        }
+                    } else {
+                        Text("of context window used")
+                            .font(theme.typography.sans(theme.typography.xs))
+                            .foregroundStyle(palette.mutedForeground)
+                    }
+                    Spacer(minLength: Space.x2)
+                    if model.onCompactContext != nil {
+                        ShadcnButton(
+                            "Compact", systemImage: compactIcon,
+                            variant: .ghost, size: .xs
+                        ) {
+                            model.onCompactContext?(agent.id)
+                        }
+                        .accessibilityHint(
+                            "Frees this agent's live context; the transcript stays"
+                        )
+                    }
+                }
             }
         }
-        .padding(.horizontal, Space.x2)
-        .padding(.vertical, Space.x1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(agent.name) context")
+        .accessibilityValue(
+            agent.contextFraction.map {
+                $0.formatted(.percent.precision(.fractionLength(0)))
+            } ?? "no data yet")
+    }
+
+    /// Thin capsule meter in the accent colour, turning destructive once
+    /// the window is nearly full. Deliberately not `ShadcnProgress`: that
+    /// one is 8pt tall and always-primary, which is fine for a download but
+    /// too loud for a per-row readout.
+    private func contextMeter(_ fraction: Double) -> some View {
+        let clamped = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+        return GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(palette.mutedForeground.opacity(0.18))
+                Capsule()
+                    .fill(contextMeterColor(clamped))
+                    .frame(width: max(geometry.size.width * clamped, clamped > 0 ? 4 : 0))
+            }
+        }
+        .frame(height: 4)
+        .animation(.easeOut(duration: 0.2), value: clamped)
     }
 
     @ViewBuilder
@@ -1188,6 +1314,7 @@ public struct AIAssistantPanel: View {
                             .strokeBorder(
                                 palette.mutedForeground.opacity(0.5), lineWidth: 1)
                             .frame(width: 8, height: 8)
+                            .shadcnDarkOutline(Circle())
                     }
                     if let agentLabel = item.agentLabel {
                         Text(agentLabel)

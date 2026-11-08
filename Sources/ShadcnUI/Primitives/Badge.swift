@@ -68,6 +68,7 @@ public struct ShadcnBadge<Content: View>: View {
             Capsule(style: .continuous).strokeBorder(borderColor, lineWidth: 1)
         )
         .clipShape(Capsule(style: .continuous))
+        .shadcnDarkOutline(Capsule(style: .continuous))
         .environment(\.shadcnIconSize, 12)
         .fixedSize(horizontal: true, vertical: false)
     }

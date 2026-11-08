@@ -110,6 +110,7 @@ public struct AIAttachmentChip: View {
                     style: StrokeStyle(lineWidth: 1, dash: state == .idle ? [4, 3] : [])
                 )
         )
+        .shadcnDarkOutline(RoundedRectangle(cornerRadius: theme.radius.xl, style: .continuous))
     }
 
     @ViewBuilder

@@ -121,7 +121,9 @@ public struct AIResponse: View {
         case 3: multiplier = 1.2
         default: multiplier = 1.08
         }
-        return .system(size: messageTextSize * multiplier, weight: .semibold)
+        let size = messageTextSize * multiplier
+        return theme.typography.sans(
+            .init(size: size, lineHeight: size * 1.2), weight: .semibold)
     }
 
     /// Renders inline markdown, falling back to the raw text if it doesn't
@@ -130,7 +132,15 @@ public struct AIResponse: View {
     /// Cached: this runs once per block per body evaluation, and the transcript
     /// re-evaluates every message body on every streamed token.
     private func inline(_ text: String) -> Text {
-        Text(AIMarkdownCache.inline(text))
+        let attributed = AIMarkdownCache.inline(text)
+        // Only text with a backtick can hold a file reference, so everything
+        // else keeps the plain cached path.
+        if text.contains("`"),
+           let chipped = AIFileReference.text(
+               from: attributed, palette: palette, theme: theme, size: messageTextSize) {
+            return chipped
+        }
+        return Text(attributed)
     }
 
     /// Bullet glyphs cycle every three depths: `•` `‣` `◦`, matching the

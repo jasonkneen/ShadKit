@@ -1,5 +1,10 @@
+import OSLog
 import ShadcnUI
 import SwiftUI
+
+/// Temporary: traces pinning decisions to diagnose the chat snapping back up.
+/// `log stream --level debug --predicate 'subsystem == "ShadKit"'`
+let conversationScrollLog = Logger(subsystem: "ShadKit", category: "conversation-scroll")
 
 /// Layout and pinning metrics for ``AIConversation``.
 ///
@@ -391,6 +396,16 @@ public struct AIConversation<Content: View>: View {
                     .background(contentGeometryDetector)
                 }
                 .coordinateSpace(name: "ai-conversation")
+                // While following, the scroll view itself keeps the bottom
+                // edge in place as content changes size. That includes the
+                // lazy stack correcting its estimate for rows it hasn't built
+                // yet, which can be hundreds of points off on a long
+                // transcript. A manual `scrollTo` landed on the inflated
+                // estimate, then the real (shorter) height left the viewport
+                // past the end of the content: the whole chat went blank until
+                // the offset snapped back and the rows were rebuilt. Once the
+                // user scrolls into history, `nil` keeps their place instead.
+                .defaultScrollAnchor(pinning.isFollowing ? .bottom : nil)
                 .background(viewportGeometryDetector)
                 .onPreferenceChange(AIConversationGeometryKey.self) { value in
                     guard let geometry = value.geometry else { return }
@@ -400,6 +415,7 @@ public struct AIConversation<Content: View>: View {
                         geometry,
                         bottomTolerance: style.bottomTolerance
                     )
+                    conversationScrollLog.debug("geometry minY=\(geometry.contentMinY, privacy: .public) h=\(geometry.contentHeight, privacy: .public) vp=\(geometry.viewportHeight, privacy: .public) dist=\(geometry.distanceFromBottom, privacy: .public) following=\(pinning.isFollowing, privacy: .public) action=\(String(describing: action), privacy: .public)")
                     perform(action, with: proxy, animated: false)
                 }
 
@@ -409,12 +425,14 @@ public struct AIConversation<Content: View>: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
-            .onChange(of: streamToken) { previous, next in
+            .onChange(of: streamToken) { _, _ in
+                // No scroll here: the token arrives before the new rows are
+                // laid out, so any target is the pre-layout estimate. The
+                // bottom anchor keeps a following transcript pinned, and the
+                // geometry observer above is the single fallback scroll path
+                // (non-animated) if the content still ends up below the fold.
                 let action = pinning.contentDidChange()
-                perform(
-                    action,
-                    with: proxy,
-                    animated: AIConversationToken.animatesFollow(from: previous, to: next))
+                conversationScrollLog.debug("token changed following=\(pinning.isFollowing, privacy: .public) action=\(String(describing: action), privacy: .public) (deferred to layout)")
             }
             .animation(.easeOut(duration: 0.15), value: pinning.isFollowing)
         }
@@ -446,6 +464,7 @@ public struct AIConversation<Content: View>: View {
     private func scrollButton(proxy: ScrollViewProxy) -> some View {
         ShadcnButton(icon: ShadcnIcon.arrowDown, variant: .outline, size: .icon) {
             let action = pinning.scrollToLatest()
+            conversationScrollLog.debug("scroll-to-latest button")
             perform(action, with: proxy, animated: true)
         }
         .clipShape(Circle())

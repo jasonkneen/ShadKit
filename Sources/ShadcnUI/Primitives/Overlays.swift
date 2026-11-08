@@ -9,13 +9,37 @@ public enum ShadcnOverlayAppearance {
     public static let borderWidth: CGFloat = 0.75
 }
 
+private struct ShadcnOnNativeChromeKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+public extension EnvironmentValues {
+    /// True inside a floating panel that already draws real glass/blur,
+    /// border and shadow (`ShadcnFloatingPanelController`), so overlay
+    /// content must not paint its own opaque material on top.
+    var shadcnOnNativeChrome: Bool {
+        get { self[ShadcnOnNativeChromeKey.self] }
+        set { self[ShadcnOnNativeChromeKey.self] = newValue }
+    }
+}
+
 private struct ShadcnOverlayAppearanceModifier: ViewModifier {
     let cornerRadius: CGFloat
+
+    @Environment(\.shadcnOnNativeChrome) private var onNativeChrome
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.shadcnPalette) private var palette
 
     func body(content: Content) -> some View {
+        if onNativeChrome {
+            content.foregroundStyle(palette.popoverForeground)
+        } else {
+            framed(content)
+        }
+    }
+
+    private func framed(_ content: Content) -> some View {
         content
             .background {
                 let shape = RoundedRectangle(
@@ -423,6 +447,7 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
     #if canImport(AppKit)
     @Environment(\.shadcnSurfaceOpacity) private var surfaceOpacity
     @Environment(\.shadcnGlassEnabled) private var glassEnabled
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var colorScheme
     /// A borderless `NSPanel`, positioned in real screen space — see
     /// `ShadcnFloatingPanelController`'s doc comment for why an in-tree
@@ -474,6 +499,7 @@ public struct ShadcnDropdownMenu<Trigger: View, Content: View>: View {
             edge: edge, alignment: alignment,
             contentWidth: minWidth, contentHeight: contentHeight,
             makesKey: true,
+            glass: glassEnabled && !reduceTransparency,
             onDismiss: { isPresented = false }
         ) {
             ShadcnPanel { content }
