@@ -47,6 +47,13 @@ public struct AICodeBlock: View {
         self.usesPaletteColors = usesPaletteColors
     }
 
+    /// Starts with the hover controls showing, so a test can measure the
+    /// block in that state.
+    init(code: String, language: String? = nil, hoveringForTesting: Bool) {
+        self.init(code: code, language: language)
+        _isHovering = State(initialValue: hoveringForTesting)
+    }
+
     private var codeFont: Font {
         if let fontFamily {
             return .custom(fontFamily, size: theme.typography.sm.size)
@@ -70,7 +77,10 @@ public struct AICodeBlock: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .topTrailing) {
+        // The hover controls are an overlay, never a layout child: as a
+        // sibling in a stack they made a one-line block taller than its code
+        // the moment the pointer entered it.
+        Group {
             Group {
                 if showingPreview, canPreview, let previewRenderer {
                     ScrollView {
@@ -103,15 +113,16 @@ public struct AICodeBlock: View {
                     .textSelection(.enabled)
                 }
             }
-
+        }
+        .overlay(alignment: .topTrailing) {
             if isHovering {
-                HStack(spacing: Space.x1) {
+                HStack(spacing: 2) {
                     if canPreview {
                         previewToggle
                     }
                     copyButton
                 }
-                .padding(Space.x2)
+                .padding(Space.x1)
                 .transition(.opacity)
             }
         }
@@ -129,25 +140,34 @@ public struct AICodeBlock: View {
     }
 
     private var previewToggle: some View {
-        ShadcnButton(
-            icon: showingPreview ? ShadcnIcon.terminal : ShadcnIcon.eye,
-            variant: .ghost,
-            size: .iconSM
-        ) {
+        control(showingPreview ? ShadcnIcon.terminal : ShadcnIcon.eye) {
             withAnimation(.easeOut(duration: 0.12)) { showingPreview.toggle() }
         }
         .accessibilityLabel(showingPreview ? "Show source" : "Show preview")
     }
 
     private var copyButton: some View {
-        ShadcnButton(
-            icon: didCopy ? ShadcnIcon.check : ShadcnIcon.copy,
-            variant: .ghost,
-            size: .iconSM
-        ) {
+        control(didCopy ? ShadcnIcon.check : ShadcnIcon.copy) {
             copy()
         }
         .accessibilityLabel(didCopy ? "Copied" : "Copy code")
+    }
+
+    /// Side of a hover control. Small enough to sit inside a one-line block
+    /// set in the smallest type without touching its edges.
+    static let controlSize: CGFloat = 20
+
+    private func control(_ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ShadcnIconView(icon, size: 11)
+                .foregroundStyle(palette.mutedForeground)
+                .frame(width: Self.controlSize, height: Self.controlSize)
+                .background(
+                    RoundedRectangle(cornerRadius: theme.radius.sm, style: .continuous)
+                        .fill(palette.background.opacity(0.9)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func copy() {
