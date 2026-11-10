@@ -314,25 +314,20 @@ struct AIAdaptiveUserBubble: View {
         }
     }
 
-    @ViewBuilder
-    private var glass: some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *) {
-            // Not `.interactive()`: the bubble is content, not a control.
-            Color.clear.glassEffect(.regular, in: shape)
-        } else {
-            materialFallback
-        }
-        #else
-        materialFallback
-        #endif
-    }
+    /// Fill opacity of the tint drawn on a glass surface. Slightly stronger
+    /// than the plain tint: the surface behind it is already translucent.
+    static func glassTintOpacity(isDark: Bool) -> Double { isDark ? 0.14 : 0.08 }
 
-    private var materialFallback: some View {
-        ZStack {
-            shape.fill(.ultraThinMaterial)
-            shape.fill(palette.foreground.opacity(0.06))
-        }
+    /// A plain tinted shape, never `glassEffect` and never a material.
+    ///
+    /// The bubble is scrolling content. Liquid Glass and materials are drawn
+    /// by backdrop layers the system hosts outside the SwiftUI layer tree, so
+    /// they are not reliably clipped by the conversation's scroll view: a
+    /// bubble scrolled just above the top edge left its glass behind as an
+    /// empty full-width bar pinned to that edge. A shape fill is drawn in the
+    /// tree and clips with everything else.
+    private var glass: some View {
+        shape.fill(palette.foreground.opacity(Self.glassTintOpacity(isDark: palette.isDark)))
     }
 }
 
