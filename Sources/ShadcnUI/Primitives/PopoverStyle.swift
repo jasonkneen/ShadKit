@@ -22,6 +22,16 @@ public enum ShadcnPopoverStyle {
     public static let panelPadding: CGFloat = 8
     public static let sectionSpacing: CGFloat = 8
 
+    /// Glass menus use a subtle foreground wash, never an opaque accent tile.
+    /// Accessibility and non-glass menus retain their original theme fill.
+    public static func rowHighlight(
+        _ palette: ShadcnPalette, glass: Bool, reduceTransparency: Bool
+    ) -> Color {
+        glass && !reduceTransparency
+            ? palette.popoverForeground.opacity(hoverFill)
+            : palette.accent
+    }
+
     public static let rowGap: CGFloat = 2
     /// Minimums, not fixed heights: long titles and larger text can grow.
     public static let rowMinHeight: CGFloat = 28

@@ -462,12 +462,20 @@ public struct AIConversation<Content: View>: View {
     }
 
     private func scrollButton(proxy: ScrollViewProxy) -> some View {
-        ShadcnButton(icon: ShadcnIcon.arrowDown, variant: .outline, size: .icon) {
+        // A circle drawn by the button itself (radius = half the 36pt size).
+        // Clipping a rounded-rect button with `Circle()` afterwards cut the
+        // rect's border off at the corners, leaving broken arcs top and bottom.
+        Button {
             let action = pinning.scrollToLatest()
             conversationScrollLog.debug("scroll-to-latest button")
             perform(action, with: proxy, animated: true)
+        } label: {
+            ShadcnIconView(ShadcnIcon.arrowDown)
         }
-        .clipShape(Circle())
+        .buttonStyle(
+            ShadcnButtonStyle(
+                variant: .outline, size: .icon, hasIcon: true, cornerRadius: 18)
+        )
         .accessibilityLabel("Scroll to latest")
     }
 

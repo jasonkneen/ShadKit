@@ -1,6 +1,32 @@
 import ShadcnUI
 import SwiftUI
 
+/// Geometry of an `AIReasoning` header: the brain glyph, the chevron and the
+/// gap between them. `.standard` is the stock look; a host that draws other
+/// disclosure rows at a smaller size can match them.
+public struct AIReasoningHeaderStyle: Sendable, Equatable {
+    public var iconSize: CGFloat
+    public var chevronSize: CGFloat
+    /// Fixed width the icon is centred in, so the label lines up with sibling
+    /// rows that use an icon column. nil sizes the column to the icon.
+    public var iconColumnWidth: CGFloat?
+    public var spacing: CGFloat
+
+    public init(
+        iconSize: CGFloat = 16,
+        chevronSize: CGFloat = 16,
+        iconColumnWidth: CGFloat? = nil,
+        spacing: CGFloat = Space.x2
+    ) {
+        self.iconSize = iconSize
+        self.chevronSize = chevronSize
+        self.iconColumnWidth = iconColumnWidth
+        self.spacing = spacing
+    }
+
+    public static let standard = AIReasoningHeaderStyle()
+}
+
 /// AI Elements' `Reasoning` — a collapsible "Thinking…" panel that times itself
 /// while streaming and folds away a second after it finishes.
 public struct AIReasoning: View {
@@ -9,6 +35,7 @@ public struct AIReasoning: View {
     /// Seconds spent thinking. Supply it to skip the internal timing.
     private let duration: Int?
     private let autoClose: Bool
+    private let headerStyle: AIReasoningHeaderStyle
 
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
@@ -25,8 +52,10 @@ public struct AIReasoning: View {
         isStreaming: Bool = false,
         duration: Int? = nil,
         defaultOpen: Bool = true,
-        autoClose: Bool = true
+        autoClose: Bool = true,
+        headerStyle: AIReasoningHeaderStyle = .standard
     ) {
+        self.headerStyle = headerStyle
         self.content = content
         self.isStreaming = isStreaming
         self.duration = duration
@@ -70,10 +99,11 @@ public struct AIReasoning: View {
     }
 
     private func trigger(isOpen: Bool) -> some View {
-        HStack(spacing: Space.x2) {
-            ShadcnIconView(ShadcnIcon.brain, size: 16)
+        HStack(spacing: headerStyle.spacing) {
+            ShadcnIconView(ShadcnIcon.brain, size: headerStyle.iconSize)
+                .frame(width: headerStyle.iconColumnWidth)
             thinkingMessage
-            ShadcnDisclosureChevron(isOpen: isOpen)
+            ShadcnDisclosureChevron(isOpen: isOpen, size: headerStyle.chevronSize)
             Spacer(minLength: 0)
         }
         .foregroundStyle(palette.mutedForeground)

@@ -139,6 +139,8 @@ public struct ShadcnCommand: View {
     private var onEscape: (() -> Void)?
 
     @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnGlassEnabled) private var rowGlassEnabled
+    @Environment(\.accessibilityReduceTransparency) private var reduceRowTransparency
     @Environment(\.shadcnTheme) private var theme
     @State private var internalQuery = ""
     @State private var internalHighlighted: String?
@@ -306,7 +308,7 @@ public struct ShadcnCommand: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: theme.radius.md, style: .continuous)
-                    .fill(isHighlighted ? palette.accent : Color.clear)
+                    .fill(isHighlighted ? ShadcnPopoverStyle.rowHighlight(palette, glass: rowGlassEnabled, reduceTransparency: reduceRowTransparency) : Color.clear)
             )
             .foregroundStyle(palette.foreground)
             .contentShape(Rectangle())

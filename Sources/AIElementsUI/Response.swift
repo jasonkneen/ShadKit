@@ -26,6 +26,12 @@ public struct AIResponse: View {
     @Environment(\.shadcnPalette) private var palette
     @Environment(\.shadcnTheme) private var theme
     @Environment(\.aiMessageTextSize) private var messageTextSize
+    @Environment(\.aiMarkdownAccents) private var configuredAccents
+    @Environment(\.aiMessageRole) private var role
+
+    /// Accents apply to assistant prose only; a user bubble is a `secondary`
+    /// surface whose text must stay in its own foreground.
+    private var accents: AIMarkdownAccents? { role == .user ? nil : configuredAccents }
 
     public init(
         _ markdown: String,
@@ -56,8 +62,9 @@ public struct AIResponse: View {
     private func view(for block: AIMarkdownBlock) -> some View {
         switch block {
         case let .heading(level, text):
-            inline(text)
+            inline(text, runAccents: false)
                 .font(headingFont(level))
+                .applyIf(accents?.heading != nil) { $0.foregroundStyle(accents?.heading ?? palette.foreground) }
                 .padding(.top, level <= 2 ? Space.x2 : 0)
 
         case let .paragraph(text):
@@ -71,7 +78,7 @@ public struct AIResponse: View {
                     HStack(alignment: .firstTextBaseline, spacing: Space.x2) {
                         Text(entry.marker)
                             .font(theme.typography.sans(bodyStep))
-                            .foregroundStyle(palette.mutedForeground)
+                            .foregroundStyle(accents?.marker ?? palette.mutedForeground)
                             .frame(minWidth: entry.item.isOrdered ? 20 : 12, alignment: .trailing)
                         inline(entry.item.text)
                             .font(theme.typography.sans(bodyStep))
@@ -93,7 +100,7 @@ public struct AIResponse: View {
         case let .quote(text):
             HStack(alignment: .top, spacing: Space.x3) {
                 Rectangle()
-                    .fill(palette.border)
+                    .fill(accents?.quote ?? palette.border)
                     .frame(width: 2)
                 inline(text)
                     .font(theme.typography.sans(bodyStep))
@@ -131,16 +138,40 @@ public struct AIResponse: View {
     ///
     /// Cached: this runs once per block per body evaluation, and the transcript
     /// re-evaluates every message body on every streamed token.
-    private func inline(_ text: String) -> Text {
-        let attributed = AIMarkdownCache.inline(text)
+    private func inline(_ text: String, runAccents: Bool = true) -> Text {
+        var attributed = AIMarkdownCache.inline(text)
+        if runAccents, let accents { attributed = accents.applyingRunAccents(to: attributed) }
         // Only text with a backtick can hold a file reference, so everything
         // else keeps the plain cached path.
+        if text.contains("`") {
+            attributed = Self.sizingCodeSpans(in: attributed, theme: theme, size: messageTextSize)
+        }
         if text.contains("`"),
            let chipped = AIFileReference.text(
-               from: attributed, palette: palette, theme: theme, size: messageTextSize) {
+               from: attributed, palette: palette, theme: theme, size: messageTextSize,
+               glyphTint: accents?.fileGlyph) {
             return chipped
         }
         return Text(attributed)
+    }
+
+    /// Inline code drawn in the mono face at the body's own point size reads
+    /// larger than the prose around it, because mono faces have a taller
+    /// x-height. Matches the file-reference chip's 0.86 so every code span in
+    /// a line sits at the same size.
+    private static func sizingCodeSpans(
+        in text: AttributedString, theme: ShadcnTheme, size: CGFloat
+    ) -> AttributedString {
+        var result = text
+        for run in text.runs {
+            guard run.font == nil,
+                  run.inlinePresentationIntent?.contains(.code) == true else { continue }
+            let bold = run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+            result[run.range].font = theme.typography.mono(
+                ShadcnTypography.Step(size: size * 0.86, lineHeight: size * 1.2),
+                weight: bold ? .semibold : .regular)
+        }
+        return result
     }
 
     /// Bullet glyphs cycle every three depths: `•` `‣` `◦`, matching the

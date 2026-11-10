@@ -52,7 +52,8 @@ enum AIFileReference {
         from attributed: AttributedString,
         palette: ShadcnPalette,
         theme: ShadcnTheme,
-        size: CGFloat
+        size: CGFloat,
+        glyphTint: Color? = nil
     ) -> Text? {
         var chips = 0
         var pieces: [Text] = []
@@ -72,7 +73,7 @@ enum AIFileReference {
             label.backgroundColor = palette.foreground.opacity(0.09)
             let glyph = Text(Image(systemName: symbol(for: plain)))
                 .font(.system(size: size * 0.8, weight: .regular))
-                .foregroundStyle(palette.mutedForeground)
+                .foregroundStyle(glyphTint ?? palette.mutedForeground)
             pieces.append(glyph + Text("\u{2009}") + Text(label))
         }
         guard chips > 0 else { return nil }

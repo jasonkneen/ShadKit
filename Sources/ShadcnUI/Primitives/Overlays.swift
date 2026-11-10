@@ -288,6 +288,8 @@ public struct ShadcnMenuItem: View {
     private let action: () -> Void
 
     @Environment(\.shadcnPalette) private var palette
+    @Environment(\.shadcnGlassEnabled) private var rowGlassEnabled
+    @Environment(\.accessibilityReduceTransparency) private var reduceRowTransparency
     @Environment(\.shadcnTheme) private var theme
     @State private var isHovering = false
 
@@ -313,7 +315,8 @@ public struct ShadcnMenuItem: View {
 
     private var foreground: Color {
         if isDestructive { return palette.destructive }
-        return isHovering ? palette.accentForeground : palette.popoverForeground
+        return isHovering && (!rowGlassEnabled || reduceRowTransparency)
+            ? palette.accentForeground : palette.popoverForeground
     }
 
     public var body: some View {
@@ -335,7 +338,7 @@ public struct ShadcnMenuItem: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: theme.radius.sm, style: .continuous)
-                    .fill(isHovering ? palette.accent : .clear)
+                    .fill(isHovering ? ShadcnPopoverStyle.rowHighlight(palette, glass: rowGlassEnabled, reduceTransparency: reduceRowTransparency) : .clear)
             )
             .contentShape(Rectangle())
         }
